@@ -1,9 +1,13 @@
 require "../spec_helper"
 
-# Expose parse_response for testing without API calls.
+# Expose private helpers for testing without API calls.
 class Arcana::AI::Chat::Anthropic
   def test_parse_response(body : String, payload : String = "{}") : Arcana::AI::Chat::Response
     parse_response(body, payload)
+  end
+
+  def test_build_payload(request : Arcana::AI::Chat::Request, model : String = "claude-sonnet-4-20250514", max_tokens : Int32 = 4096) : String
+    build_payload(request, model, max_tokens)
   end
 end
 
@@ -160,6 +164,77 @@ describe Arcana::AI::Chat::Anthropic do
       resp = provider.test_parse_response(body, "the-request")
       resp.raw_request.should eq("the-request")
       resp.raw_json.should eq(body)
+    end
+
+    it "extracts thinking blocks into thinking_content" do
+      body = %({
+        "content": [
+          {"type": "thinking", "thinking": "Let me work through this..."},
+          {"type": "thinking", "thinking": "Actually, the answer is 42."},
+          {"type": "text", "text": "The answer is 42."}
+        ],
+        "stop_reason": "end_turn",
+        "model": "claude-opus-4",
+        "usage": {"input_tokens": 20, "output_tokens": 15}
+      })
+
+      resp = provider.test_parse_response(body)
+      resp.content.should eq("The answer is 42.")
+      resp.thinking_content.should eq("Let me work through this...\n\nActually, the answer is 42.")
+    end
+
+    it "marks redacted thinking without losing the signal" do
+      body = %({
+        "content": [
+          {"type": "redacted_thinking", "data": "..."},
+          {"type": "text", "text": "OK."}
+        ],
+        "stop_reason": "end_turn",
+        "model": "claude-opus-4"
+      })
+
+      resp = provider.test_parse_response(body)
+      resp.thinking_content.should eq("[redacted]")
+    end
+  end
+
+  describe "request building — extended thinking" do
+    provider = Arcana::AI::Chat::Anthropic.new(api_key: "sk-test")
+
+    it "emits `thinking` block when Request.thinking is enabled" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true, budget: 2048),
+      )
+      payload = JSON.parse(provider.test_build_payload(request, max_tokens: 4096))
+      payload["thinking"]["type"].as_s.should eq("enabled")
+      payload["thinking"]["budget_tokens"].as_i.should eq(2048)
+    end
+
+    it "defaults budget to 1024 when caller didn't specify" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true),
+      )
+      payload = JSON.parse(provider.test_build_payload(request, max_tokens: 4096))
+      payload["thinking"]["budget_tokens"].as_i.should eq(1024)
+    end
+
+    it "clamps budget below max_tokens (Anthropic requires budget < max_tokens)" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true, budget: 10000),
+      )
+      payload = JSON.parse(provider.test_build_payload(request, max_tokens: 4096))
+      payload["thinking"]["budget_tokens"].as_i.should eq(4095)
+    end
+
+    it "omits `thinking` when Request.thinking is nil" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+      )
+      payload = JSON.parse(provider.test_build_payload(request))
+      payload["thinking"]?.should be_nil
     end
   end
 end

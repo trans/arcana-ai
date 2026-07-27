@@ -8,6 +8,7 @@ module Arcana::AI
       property tools : Array(Tool)?
       property server_tools : Array(ServerTool)?
       property tool_choice : String?  # "auto", "required", "none", or {"type":"function","function":{"name":"..."}}
+      property thinking : ThinkingConfig?
       property trace_tags : Hash(String, String)?
 
       def initialize(
@@ -18,6 +19,7 @@ module Arcana::AI
         @tools : Array(Tool)? = nil,
         @server_tools : Array(ServerTool)? = nil,
         @tool_choice : String? = nil,
+        @thinking : ThinkingConfig? = nil,
         @trace_tags : Hash(String, String)? = nil,
       )
       end

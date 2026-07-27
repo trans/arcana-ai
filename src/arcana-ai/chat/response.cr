@@ -19,6 +19,20 @@ module Arcana::AI
       property cache_read_tokens : Int32?
       property cache_creation_tokens : Int32?
 
+      # Chain-of-thought / reasoning fields, when the model supports them.
+      #
+      # `thinking_content` — the raw reasoning text if the provider
+      # surfaces it (Anthropic extended thinking, Gemini with
+      # includeThoughts). OpenAI o-series never surfaces the reasoning
+      # itself, so this stays nil for OpenAI even when reasoning ran.
+      #
+      # `reasoning_tokens` — the token count the model spent on
+      # reasoning, when reported (OpenAI's
+      # completion_tokens_details.reasoning_tokens, Anthropic's cached
+      # thinking budget). Useful for cost tracking.
+      property thinking_content : String?
+      property reasoning_tokens : Int32?
+
       # Server-side tool results (e.g. web_search results).
       property server_tool_results : Array(JSON::Any)
 
@@ -34,6 +48,8 @@ module Arcana::AI
         @completion_tokens : Int32? = nil,
         @cache_read_tokens : Int32? = nil,
         @cache_creation_tokens : Int32? = nil,
+        @thinking_content : String? = nil,
+        @reasoning_tokens : Int32? = nil,
         @server_tool_results : Array(JSON::Any) = [] of JSON::Any,
       )
       end
@@ -82,6 +98,10 @@ module Arcana::AI
         usage = parsed["usage"]?
         prompt_tokens = usage.try { |u| u["prompt_tokens"]?.try(&.as_i?) }
         completion_tokens = usage.try { |u| u["completion_tokens"]?.try(&.as_i?) }
+        # `usage.completion_tokens_details.reasoning_tokens` for o-series.
+        reasoning_tokens = usage.try do |u|
+          u["completion_tokens_details"]?.try(&.["reasoning_tokens"]?).try(&.as_i?)
+        end
 
         new(
           content: content,
@@ -92,6 +112,7 @@ module Arcana::AI
           raw_json: raw,
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
+          reasoning_tokens: reasoning_tokens,
         )
       end
     end

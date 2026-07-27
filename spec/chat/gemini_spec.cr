@@ -1,9 +1,13 @@
 require "../spec_helper"
 
-# Expose parse_response for testing without API calls.
+# Expose private helpers for testing without API calls.
 class Arcana::AI::Chat::Gemini
   def test_parse_response(body : String, payload : String = "{}") : Arcana::AI::Chat::Response
     parse_response(body, payload)
+  end
+
+  def test_build_payload(request : Arcana::AI::Chat::Request, model : String = "gemini-2.5-pro") : String
+    build_payload(request, model)
   end
 end
 
@@ -127,6 +131,66 @@ describe Arcana::AI::Chat::Gemini do
       resp = provider.test_parse_response(body, "the-request")
       resp.raw_request.should eq("the-request")
       resp.raw_json.should eq(body)
+    end
+
+    it "separates thought parts into thinking_content" do
+      body = %({
+        "candidates": [{
+          "content": {"parts": [
+            {"thought": true, "text": "Let me think about this..."},
+            {"thought": true, "text": "The user wants a joke."},
+            {"text": "Why did the chicken cross the road?"}
+          ]},
+          "finishReason": "STOP"
+        }],
+        "modelVersion": "gemini-2.5-pro",
+        "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 15, "thoughtsTokenCount": 42}
+      })
+      resp = provider.test_parse_response(body)
+      resp.content.should eq("Why did the chicken cross the road?")
+      resp.thinking_content.should eq("Let me think about this...\n\nThe user wants a joke.")
+      resp.reasoning_tokens.should eq(42)
+    end
+  end
+
+  describe "request building — thinkingConfig" do
+    provider = Arcana::AI::Chat::Gemini.new(api_key: "test-key")
+
+    it "emits generationConfig.thinkingConfig when Request.thinking is enabled" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true, budget: 4096),
+      )
+      payload = JSON.parse(provider.test_build_payload(request))
+      cfg = payload["generationConfig"]["thinkingConfig"]
+      cfg["thinkingBudget"].as_i.should eq(4096)
+      cfg["includeThoughts"].as_bool.should be_true
+    end
+
+    it "honors include_thoughts: false" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true, include_thoughts: false),
+      )
+      payload = JSON.parse(provider.test_build_payload(request))
+      payload["generationConfig"]["thinkingConfig"]["includeThoughts"].as_bool.should be_false
+    end
+
+    it "omits thinkingBudget when caller didn't set it (model uses its own default)" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+        thinking: Arcana::AI::Chat::ThinkingConfig.new(enabled: true),
+      )
+      payload = JSON.parse(provider.test_build_payload(request))
+      payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]?.should be_nil
+    end
+
+    it "omits thinkingConfig entirely when Request.thinking is nil" do
+      request = Arcana::AI::Chat::Request.new(
+        messages: [Arcana::AI::Chat::Message.new(role: "user", content: "hi")],
+      )
+      payload = JSON.parse(provider.test_build_payload(request))
+      payload["generationConfig"]["thinkingConfig"]?.should be_nil
     end
   end
 end

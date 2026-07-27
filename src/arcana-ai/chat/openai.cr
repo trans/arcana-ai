@@ -200,6 +200,12 @@ module Arcana::AI
       end
 
       private def build_payload(request : Request, model : String, stream : Bool = false) : String
+        # Reasoning-enabled requests target the o-series (o1, o3,
+        # o4-mini, gpt-5-thinking, etc.), which use `max_completion_tokens`
+        # instead of `max_tokens` and take a `reasoning_effort` param.
+        # Non-reasoning models keep the classic shape.
+        reasoning = request.thinking
+
         JSON.build do |json|
           json.object do
             json.field "model", model
@@ -211,7 +217,13 @@ module Arcana::AI
               end
             end
             json.field "temperature", request.temperature
-            json.field "max_tokens", request.max_tokens
+
+            if reasoning && reasoning.enabled
+              json.field "max_completion_tokens", request.max_tokens
+              json.field "reasoning_effort", reasoning.effort || "medium"
+            else
+              json.field "max_tokens", request.max_tokens
+            end
 
             if tools = request.tools
               json.field "tools" do

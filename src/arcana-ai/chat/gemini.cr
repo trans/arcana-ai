@@ -210,6 +210,22 @@ module Arcana::AI
               json.object do
                 json.field "temperature", request.temperature
                 json.field "maxOutputTokens", request.max_tokens if request.max_tokens > 0
+
+                # Gemini 2.5 series: thinkingConfig controls the reasoning
+                # budget and whether thought parts come back in the
+                # response. Emit only when the caller opted in.
+                if think = request.thinking
+                  if think.enabled
+                    json.field "thinkingConfig" do
+                      json.object do
+                        if budget = think.budget
+                          json.field "thinkingBudget", budget
+                        end
+                        json.field "includeThoughts", think.include_thoughts
+                      end
+                    end
+                  end
+                end
               end
             end
 
@@ -286,6 +302,7 @@ module Arcana::AI
 
         content = nil
         tool_calls = [] of ToolCall
+        thinking_parts = [] of String
 
         if candidates = parsed["candidates"]?.try(&.as_a?)
           candidate = candidates[0]?
@@ -294,8 +311,16 @@ module Arcana::AI
 
             if parts = candidate["content"]?.try { |c| c["parts"]?.try(&.as_a?) }
               parts.each do |part|
+                # Thought parts (Gemini 2.5 with includeThoughts) come
+                # back with `thought: true`. Split them out so callers
+                # get the reasoning separately from the final answer.
+                is_thought = part["thought"]?.try(&.as_bool?) == true
                 if text = part["text"]?.try(&.as_s?)
-                  content = content ? content + text : text
+                  if is_thought
+                    thinking_parts << text
+                  else
+                    content = content ? content + text : text
+                  end
                 elsif fc = part["functionCall"]?
                   tool_calls << ToolCall.new(
                     id: Random::Secure.hex(12),
@@ -316,6 +341,10 @@ module Arcana::AI
         usage = parsed["usageMetadata"]?
         prompt_tokens = usage.try { |u| u["promptTokenCount"]?.try(&.as_i?) }
         completion_tokens = usage.try { |u| u["candidatesTokenCount"]?.try(&.as_i?) }
+        # Gemini reports thoughts token count separately when thinking ran.
+        reasoning_tokens = usage.try { |u| u["thoughtsTokenCount"]?.try(&.as_i?) }
+
+        thinking_content = thinking_parts.empty? ? nil : thinking_parts.join("\n\n")
 
         Response.new(
           content: content,
@@ -327,6 +356,8 @@ module Arcana::AI
           raw_json: body,
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
+          thinking_content: thinking_content,
+          reasoning_tokens: reasoning_tokens,
         )
       end
 

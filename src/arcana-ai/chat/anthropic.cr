@@ -303,6 +303,22 @@ module Arcana::AI
               json.field "temperature", request.temperature
             end
 
+            # Extended thinking: `thinking: {type: "enabled", budget_tokens: N}`.
+            # Budget must be < max_tokens. Default to 1024 if the caller
+            # didn't specify; clamp to max_tokens - 1 as a safety.
+            if think = request.thinking
+              if think.enabled
+                budget = think.budget || 1024
+                budget = max_tokens - 1 if budget >= max_tokens
+                json.field "thinking" do
+                  json.object do
+                    json.field "type", "enabled"
+                    json.field "budget_tokens", budget
+                  end
+                end
+              end
+            end
+
             has_tools = request.tools || request.server_tools
             if has_tools
               json.field "tools" do
@@ -445,12 +461,23 @@ module Arcana::AI
         content = nil
         tool_calls = [] of ToolCall
         server_tool_results = [] of JSON::Any
+        thinking_parts = [] of String
 
         if blocks = parsed["content"]?.try(&.as_a?)
           blocks.each do |block|
             case block["type"]?.try(&.as_s?)
             when "text"
               content = block["text"]?.try(&.as_s?)
+            when "thinking"
+              # Extended thinking block. Anthropic returns thinking as a
+              # separate content block type when the request enabled it.
+              if t = block["thinking"]?.try(&.as_s?)
+                thinking_parts << t
+              end
+            when "redacted_thinking"
+              # The model produced thinking but it was redacted upstream.
+              # Preserve the marker so callers can log that reasoning ran.
+              thinking_parts << "[redacted]"
             when "tool_use"
               tool_calls << ToolCall.new(
                 id: block["id"]?.try(&.as_s?) || "",
@@ -468,6 +495,8 @@ module Arcana::AI
             end
           end
         end
+
+        thinking_content = thinking_parts.empty? ? nil : thinking_parts.join("\n\n")
 
         stop_reason = parsed["stop_reason"]?.try(&.as_s?)
         finish_reason = case stop_reason
@@ -496,6 +525,7 @@ module Arcana::AI
           completion_tokens: completion_tokens,
           cache_read_tokens: cache_read_tokens,
           cache_creation_tokens: cache_creation_tokens,
+          thinking_content: thinking_content,
           server_tool_results: server_tool_results,
         )
       end

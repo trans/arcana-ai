@@ -92,5 +92,29 @@ describe Arcana::AI::Chat::Response do
       resp = Arcana::AI::Chat::Response.from_openai_json(raw, provider: "custom")
       resp.provider.should eq("custom")
     end
+
+    it "extracts reasoning_tokens from completion_tokens_details (o-series)" do
+      raw = %({
+        "choices": [{"message": {"content": "42"}, "finish_reason": "stop"}],
+        "model": "o3-mini",
+        "usage": {
+          "prompt_tokens": 15,
+          "completion_tokens": 100,
+          "completion_tokens_details": {"reasoning_tokens": 87}
+        }
+      })
+      resp = Arcana::AI::Chat::Response.from_openai_json(raw)
+      resp.reasoning_tokens.should eq(87)
+      resp.completion_tokens.should eq(100)
+    end
+
+    it "leaves reasoning_tokens nil when the response doesn't include it" do
+      raw = %({
+        "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 3}
+      })
+      resp = Arcana::AI::Chat::Response.from_openai_json(raw)
+      resp.reasoning_tokens.should be_nil
+    end
   end
 end

@@ -17,6 +17,7 @@ require "./arcana-ai/chat/message"
 require "./arcana-ai/chat/tool"
 require "./arcana-ai/chat/server_tool"
 require "./arcana-ai/chat/stream_event"
+require "./arcana-ai/chat/thinking"
 require "./arcana-ai/chat/request"
 require "./arcana-ai/chat/response"
 require "./arcana-ai/chat/provider"
@@ -41,6 +42,6 @@ require "./arcana-ai/registry"
 
 module Arcana
   module AI
-    VERSION = "0.1.0"
+    VERSION = "0.2.0"
   end
 end
