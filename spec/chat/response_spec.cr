@@ -116,5 +116,13 @@ describe Arcana::AI::Chat::Response do
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
       resp.reasoning_tokens.should be_nil
     end
+
+    it "reads OpenAI's cached prompt tokens as cache_read_tokens" do
+      raw = %({"model":"gpt-4o-mini","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+        "usage":{"prompt_tokens":2048,"completion_tokens":12,"prompt_tokens_details":{"cached_tokens":1920}}})
+      resp = Arcana::AI::Chat::Response.from_openai_json(raw)
+      resp.prompt_tokens.should eq(2048)
+      resp.cache_read_tokens.should eq(1920)
+    end
   end
 end

@@ -80,6 +80,7 @@ module Arcana::AI
         finish_reason = ""
         prompt_tokens = 0
         completion_tokens = 0
+        cached_tokens : Int32? = nil
 
         begin
           client.post(uri.request_target, headers: headers, body: payload) do |response|
@@ -138,6 +139,7 @@ module Arcana::AI
               if usage = parsed["usage"]?
                 prompt_tokens = usage["prompt_tokens"]?.try(&.as_i?) || prompt_tokens
                 completion_tokens = usage["completion_tokens"]?.try(&.as_i?) || completion_tokens
+                cached_tokens = usage["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?) || cached_tokens
               end
             end
           end
@@ -173,6 +175,7 @@ module Arcana::AI
           raw_json: "",
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
+          cache_read_tokens: cached_tokens,
         )
 
         block.call(StreamEvent.done(final))

@@ -15,7 +15,9 @@ module Arcana::AI
       property prompt_tokens : Int32?
       property completion_tokens : Int32?
 
-      # Anthropic prompt caching tokens.
+      # Prompt caching tokens. cache_read_tokens is also OpenAI's
+      # usage.prompt_tokens_details.cached_tokens (the part of prompt_tokens
+      # served from the cache).
       property cache_read_tokens : Int32?
       property cache_creation_tokens : Int32?
 
@@ -102,6 +104,10 @@ module Arcana::AI
         reasoning_tokens = usage.try do |u|
           u["completion_tokens_details"]?.try(&.["reasoning_tokens"]?).try(&.as_i?)
         end
+        # Prompt caching: the cached part of prompt_tokens
+        cache_read_tokens = usage.try do |u|
+          u["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?)
+        end
 
         new(
           content: content,
@@ -112,6 +118,7 @@ module Arcana::AI
           raw_json: raw,
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
+          cache_read_tokens: cache_read_tokens,
           reasoning_tokens: reasoning_tokens,
         )
       end
