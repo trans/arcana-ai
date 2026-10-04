@@ -180,37 +180,55 @@ module Arcana::AI
               json.field "height", request.height
               json.field "model", model
               json.field "steps", @steps
-              json.field "CFGScale", @cfg_scale
+              json.field "CFGScale", request.cfg_scale || @cfg_scale
               json.field "numberResults", 1
               json.field "includeCost", true
 
               json.field "promptEnhancer", true if request.enhance_prompt
+              request.seed.try { |seed| json.field "seed", seed }
 
-              # Identity conditioning
+              # Identity conditioning. Runware ignores parameters it doesn't
+              # know without a word, so a wrong shape here does nothing
+              # silently: check a change with a same-seed A/B (with and
+              # without, then compare the images).
               if id = identity
-                if File.exists?(id.reference_path)
-                  case id.method
-                  when Identity::Method::SeedImage
-                    json.field "seedImage", image_data_uri(id.reference_path)
-                    json.field "strength", id.strength
+                unless File.exists?(id.reference_path)
+                  raise ArgumentError.new("Identity reference image not found: #{id.reference_path}")
+                end
+                case id.method
+                when Identity::Method::SeedImage
+                  json.field "seedImage", image_data_uri(id.reference_path)
+                  json.field "strength", id.strength
 
-                  when Identity::Method::AcePlus
-                    json.field "acePlusPlus" do
-                      json.object do
-                        json.field "inputImages" do
-                          json.array { json.string image_data_uri(id.reference_path) }
-                        end
-                        json.field "taskType", id.task_type || "portrait"
-                        json.field "repaintingScale", id.strength
+                when Identity::Method::AcePlus
+                  mask = id.mask_path
+                  raise ArgumentError.new("ACE++ on Runware needs a mask (Identity#mask_path)") unless mask
+                  raise ArgumentError.new("ACE++ mask not found: #{mask}") unless File.exists?(mask)
+                  json.field "acePlusPlus" do
+                    json.object do
+                      json.field "inputImages" do
+                        json.array { json.string image_data_uri(id.reference_path) }
                       end
+                      json.field "inputMasks" do
+                        json.array { json.string image_data_uri(mask) }
+                      end
+                      json.field "type", id.task_type || "portrait"
+                      json.field "repaintingScale", id.strength
                     end
-
-                  when Identity::Method::PuLID
-                    json.field "referenceImages" do
-                      json.array { json.string image_data_uri(id.reference_path) }
-                    end
-                    json.field "guidanceScale", id.strength
                   end
+
+                when Identity::Method::PuLID
+                  json.field "puLID" do
+                    json.object do
+                      json.field "inputImages" do
+                        json.array { json.string image_data_uri(id.reference_path) }
+                      end
+                      json.field "idWeight", id.strength
+                    end
+                  end
+
+                else
+                  raise ArgumentError.new("Runware doesn't support identity method #{id.method}")
                 end
               end
 

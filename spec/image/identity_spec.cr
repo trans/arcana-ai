@@ -29,7 +29,7 @@ describe Arcana::AI::Image::Identity do
     it "creates a PuLID identity" do
       id = Arcana::AI::Image::Identity.pulid("/face.png")
       id.method.should eq(Arcana::AI::Image::Identity::Method::PuLID)
-      id.strength.should eq(0.65)
+      id.strength.should eq(1.0) # Runware's idWeight
     end
   end
 
