@@ -177,7 +177,8 @@ end
 Arcana::AI::Registry.register_tts("openai") do |config|
   Arcana::AI::TTS::OpenAI.new(
     api_key: Arcana::AI::Registry.str(config, "api_key"),
-    model: Arcana::AI::Registry.str(config, "model", "gpt-4o-mini-tts"),
+    model: Arcana::AI::Registry.str(config, "model", Arcana::AI::TTS::OpenAI::DEFAULT_MODEL),
+    voice: Arcana::AI::Registry.str(config, "voice", Arcana::AI::TTS::OpenAI::DEFAULT_VOICE),
   ).as(Arcana::AI::TTS::Provider)
 end
 

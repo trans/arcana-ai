@@ -2,8 +2,8 @@ module Arcana::AI
   module TTS
     struct Request
       property text : String
-      property voice : String
-      property model : String
+      property voice : String            # empty = the provider's default voice
+      property model : String            # empty = the provider's default model
       property response_format : String
       property instructions : String?    # style/persona instructions (OpenAI)
       property speed : Float64?          # 0.25-4.0
@@ -13,8 +13,8 @@ module Arcana::AI
 
       def initialize(
         @text : String,
-        @voice : String = "alloy",
-        @model : String = "gpt-4o-mini-tts",
+        @voice : String = "",
+        @model : String = "",
         @response_format : String = "opus",
         @instructions : String? = nil,
         @speed : Float64? = nil,

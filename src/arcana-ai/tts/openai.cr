@@ -4,13 +4,16 @@ require "json"
 module Arcana::AI
   module TTS
     class OpenAI < Provider
-      ENDPOINT = "https://api.openai.com/v1/audio/speech"
+      ENDPOINT      = "https://api.openai.com/v1/audio/speech"
+      DEFAULT_MODEL = "gpt-4o-mini-tts"
+      DEFAULT_VOICE = "alloy"
 
       getter model : String
 
       def initialize(
         @api_key : String,
-        @model : String = "gpt-4o-mini-tts",
+        @model : String = DEFAULT_MODEL,
+        @voice : String = DEFAULT_VOICE,
         @endpoint : String = ENDPOINT,
         trace : Proc(String, Nil)? = nil,
       )
@@ -22,11 +25,12 @@ module Arcana::AI
         "openai"
       end
 
-      def synthesize(request : Request, output_path : String) : Result
+      def synthesize(request : Request) : Result
         model = request.model.empty? ? @model : request.model
-        payload = build_payload(request, model)
+        voice = request.voice.empty? ? @voice : request.voice
+        payload = build_payload(request, model, voice)
 
-        emit_request_trace(request, model)
+        emit_request_trace(request, model, voice)
 
         response = post_api(payload)
 
@@ -36,22 +40,20 @@ module Arcana::AI
           raise APIError.new(response.status_code, response.body, "openai:tts")
         end
 
-        File.open(output_path, "wb") do |file|
-          file.write(response.body.to_slice)
-        end
-
-        Result.new(output_path, model, "openai",
+        Result.new("", model, "openai",
           raw_request: payload,
           status_code: response.status_code,
           content_type: response.headers["Content-Type"]? || "",
-          content_length: response.body.bytesize.to_i64)
+          content_length: response.body.bytesize.to_i64,
+          audio: response.body.to_slice)
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : Bytes ->) : Result
         raise CancelledError.new if ctx.try(&.cancelled?)
 
         model = request.model.empty? ? @model : request.model
-        payload = build_payload(request, model)
+        voice = request.voice.empty? ? @voice : request.voice
+        payload = build_payload(request, model, voice)
         headers = Util.bearer_headers(@api_key)
         uri = URI.parse(@endpoint)
         client = HTTP::Client.new(uri)
@@ -104,11 +106,11 @@ module Arcana::AI
         )
       end
 
-      private def build_payload(request : Request, model : String) : String
+      private def build_payload(request : Request, model : String, voice : String) : String
         JSON.build do |json|
           json.object do
             json.field "model", model
-            json.field "voice", request.voice
+            json.field "voice", voice
             json.field "input", request.text.strip + "\n\n"
             json.field "response_format", request.response_format
             if instructions = request.instructions
@@ -130,7 +132,7 @@ module Arcana::AI
         client.post(uri.request_target, headers: headers, body: payload)
       end
 
-      private def emit_request_trace(request : Request, model : String) : Nil
+      private def emit_request_trace(request : Request, model : String, voice : String) : Nil
         tags = request.trace_tags || {} of String => String
         emit_trace({
           phase:           "api_request_tts",
@@ -138,7 +140,7 @@ module Arcana::AI
           provider:        "openai",
           endpoint:        @endpoint,
           model:           model,
-          voice:           request.voice,
+          voice:           voice,
           response_format: request.response_format,
           tags:            tags.to_json,
         })

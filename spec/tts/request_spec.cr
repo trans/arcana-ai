@@ -2,10 +2,10 @@ require "../spec_helper"
 
 describe Arcana::AI::TTS::Request do
   describe "defaults" do
-    it "uses sensible defaults" do
+    it "leaves voice and model to the provider" do
       req = Arcana::AI::TTS::Request.new(text: "Hello")
-      req.voice.should eq("alloy")
-      req.model.should eq("gpt-4o-mini-tts")
+      req.voice.should eq("")
+      req.model.should eq("")
       req.response_format.should eq("opus")
       req.instructions.should be_nil
       req.speed.should be_nil

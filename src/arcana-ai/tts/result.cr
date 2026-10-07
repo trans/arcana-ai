@@ -8,6 +8,7 @@ module Arcana::AI
       property status_code : Int32    # HTTP status
       property content_type : String  # response Content-Type
       property content_length : Int64 # response body size in bytes
+      property audio : Bytes          # audio, set only by in-memory synthesize
 
       def initialize(
         @output_path : String,
@@ -17,6 +18,7 @@ module Arcana::AI
         @status_code : Int32 = 0,
         @content_type : String = "",
         @content_length : Int64 = 0,
+        @audio : Bytes = Bytes.empty,
       )
       end
     end

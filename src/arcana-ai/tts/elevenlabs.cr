@@ -35,7 +35,7 @@ module Arcana::AI
         "elevenlabs"
       end
 
-      def synthesize(request : Request, output_path : String) : Result
+      def synthesize(request : Request) : Result
         model = request.model.empty? ? @model : request.model
         voice_id = request.voice.empty? ? @voice_id : request.voice
         payload = build_payload(request, model)
@@ -51,15 +51,12 @@ module Arcana::AI
           raise APIError.new(response.status_code, response.body, "elevenlabs:tts")
         end
 
-        File.open(output_path, "wb") do |file|
-          file.write(response.body.to_slice)
-        end
-
-        Result.new(output_path, model, "elevenlabs",
+        Result.new("", model, "elevenlabs",
           raw_request: payload,
           status_code: response.status_code,
           content_type: response.headers["Content-Type"]? || "",
-          content_length: response.body.bytesize.to_i64)
+          content_length: response.body.bytesize.to_i64,
+          audio: response.body.to_slice)
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : Bytes ->) : Result

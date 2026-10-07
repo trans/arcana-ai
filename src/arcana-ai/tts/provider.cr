@@ -6,15 +6,20 @@ module Arcana::AI
     abstract class Provider
       include Arcana::AI::Traceable
 
-      abstract def synthesize(request : Request, output_path : String) : Result
+      # Synthesize speech in memory. The audio is in `Result#audio`;
+      # `Result#output_path` is empty.
+      abstract def synthesize(request : Request) : Result
       abstract def name : String
 
-      # TODO(0.2.x): add `abstract def synthesize_bytes(request : Request) : Bytes`
-      # so callers that just want the audio in memory don't need to round-trip
-      # through disk. arcana 0.20.3's openai:tts `inline: true` currently
-      # synthesizes to a temp file, reads it back, base64-encodes, and deletes
-      # (see bin/arcana.cr in the arcana repo). Promote here when a second
-      # caller wants inline or the temp-file cost shows up in profiling.
+      # Synthesize speech and write it to `output_path`. `Result#audio` is
+      # left empty so callers that keep results don't also keep the audio.
+      def synthesize(request : Request, output_path : String) : Result
+        result = synthesize(request)
+        File.write(output_path, result.audio)
+        result.output_path = output_path
+        result.audio = Bytes.empty
+        result
+      end
 
       # Stream audio chunks as they arrive. Override in subclasses.
       def stream(request : Request, ctx : Context? = nil, &block : Bytes ->) : Result
