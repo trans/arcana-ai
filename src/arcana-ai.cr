@@ -3,6 +3,7 @@ require "json"
 require "./arcana-ai/trace"
 require "./arcana-ai/error"
 require "./arcana-ai/context"
+require "./arcana-ai/retry"
 require "./arcana-ai/util/hash"
 require "./arcana-ai/util/http"
 require "./arcana-ai/util/multipart"
@@ -13,6 +14,7 @@ require "./arcana-ai/image/result"
 require "./arcana-ai/image/provider"
 require "./arcana-ai/image/runware"
 require "./arcana-ai/image/openai"
+require "./arcana-ai/chat/image_part"
 require "./arcana-ai/chat/message"
 require "./arcana-ai/chat/tool"
 require "./arcana-ai/chat/server_tool"
@@ -42,6 +44,6 @@ require "./arcana-ai/registry"
 
 module Arcana
   module AI
-    VERSION = "0.3.0"
+    VERSION = "0.4.0"
   end
 end

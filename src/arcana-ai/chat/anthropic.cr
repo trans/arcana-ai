@@ -57,24 +57,23 @@ module Arcana::AI
           tags:       tags.to_json,
         })
 
-        response = post_api(payload)
-
-        emit_trace({
-          phase:          "api_response_chat",
-          event_type:     "api_response",
-          provider:       "anthropic",
-          endpoint:       @endpoint,
-          status_code:    response.status_code,
-          content_type:   response.headers["Content-Type"]? || "",
-          content_length: response.headers["Content-Length"]? || "",
-          tags:           tags.to_json,
-        })
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "anthropic:chat")
+        response, stats = retry_policy.run(on_retry: retry_tracer(request)) do
+          r = post_api(payload)
+          emit_trace({
+            phase:          "api_response_chat",
+            event_type:     "api_response",
+            provider:       "anthropic",
+            endpoint:       @endpoint,
+            status_code:    r.status_code,
+            content_type:   r.headers["Content-Type"]? || "",
+            content_length: r.headers["Content-Length"]? || "",
+            tags:           tags.to_json,
+          })
+          raise APIError.from(r, r.body, "anthropic:chat") unless r.success?
+          r
         end
 
-        parse_response(response.body, payload)
+        parse_response(response.body, payload).with_retries(stats)
       end
 
       def complete(request : Request, ctx : Context) : Response
@@ -94,24 +93,23 @@ module Arcana::AI
           tags:       tags.to_json,
         })
 
-        response = post_api_cancellable(payload, ctx)
-
-        emit_trace({
-          phase:          "api_response_chat",
-          event_type:     "api_response",
-          provider:       "anthropic",
-          endpoint:       @endpoint,
-          status_code:    response.status_code,
-          content_type:   response.headers["Content-Type"]? || "",
-          content_length: response.headers["Content-Length"]? || "",
-          tags:           tags.to_json,
-        })
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "anthropic:chat")
+        response, stats = retry_policy.run(ctx, retry_tracer(request)) do
+          r = post_api_cancellable(payload, ctx)
+          emit_trace({
+            phase:          "api_response_chat",
+            event_type:     "api_response",
+            provider:       "anthropic",
+            endpoint:       @endpoint,
+            status_code:    r.status_code,
+            content_type:   r.headers["Content-Type"]? || "",
+            content_length: r.headers["Content-Length"]? || "",
+            tags:           tags.to_json,
+          })
+          raise APIError.from(r, r.body, "anthropic:chat") unless r.success?
+          r
         end
 
-        parse_response(response.body, payload)
+        parse_response(response.body, payload).with_retries(stats)
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : StreamEvent ->) : Response
@@ -132,12 +130,16 @@ module Arcana::AI
         client.read_timeout = 120.seconds
 
         # Cancel watcher
+        # The watcher stops when the stream ends, so it doesn't outlive the call.
+        streaming = true
         if c = ctx
           spawn do
-            until c.cancelled?
+            while streaming && !c.cancelled?
               sleep 100.milliseconds
             end
-            client.close rescue nil
+            if streaming
+              client.close rescue nil
+            end
           end
         end
 
@@ -155,95 +157,99 @@ module Arcana::AI
         cache_read_tokens : Int32? = nil
         cache_creation_tokens : Int32? = nil
 
+        stats = RetryStats.new
         begin
-          client.post(uri.request_target, headers: headers, body: payload) do |response|
-            unless response.success?
-              body = response.body_io.gets_to_end
-              raise APIError.new(response.status_code, body, "anthropic:chat:stream")
-            end
+          _, stats = retry_policy.run(ctx, retry_tracer(request)) do |attempt|
+            client.post(uri.request_target, headers: headers, body: payload) do |response|
+              unless response.success?
+                body = response.body_io.gets_to_end
+                raise APIError.from(response, body, "anthropic:chat:stream")
+              end
+              attempt.started! # past this point, a failure can't be retried
 
-            event_type = ""
-            response.body_io.each_line do |line|
-              raise CancelledError.new if ctx.try(&.cancelled?)
+              event_type = ""
+              response.body_io.each_line do |line|
+                raise CancelledError.new if ctx.try(&.cancelled?)
 
-              if line.starts_with?("event: ")
-                event_type = line[7..]
-              elsif line.starts_with?("data: ")
-                data = line[6..]
-                next if data == "[DONE]"
+                if line.starts_with?("event: ")
+                  event_type = line[7..]
+                elsif line.starts_with?("data: ")
+                  data = line[6..]
+                  next if data == "[DONE]"
 
-                parsed = JSON.parse(data) rescue next
+                  parsed = JSON.parse(data) rescue next
 
-                case event_type
-                when "message_start"
-                  if msg = parsed["message"]?
-                    response_model = msg["model"]?.try(&.as_s?) || ""
-                    if usage = msg["usage"]?
-                      prompt_tokens = usage["input_tokens"]?.try(&.as_i?) || 0
-                      cache_read_tokens = usage["cache_read_input_tokens"]?.try(&.as_i?)
-                      cache_creation_tokens = usage["cache_creation_input_tokens"]?.try(&.as_i?)
+                  case event_type
+                  when "message_start"
+                    if msg = parsed["message"]?
+                      response_model = msg["model"]?.try(&.as_s?) || ""
+                      if usage = msg["usage"]?
+                        prompt_tokens = usage["input_tokens"]?.try(&.as_i?) || 0
+                        cache_read_tokens = usage["cache_read_input_tokens"]?.try(&.as_i?)
+                        cache_creation_tokens = usage["cache_creation_input_tokens"]?.try(&.as_i?)
+                      end
                     end
-                  end
 
-                when "content_block_start"
-                  if cb = parsed["content_block"]?
-                    case cb["type"]?.try(&.as_s?)
-                    when "tool_use"
-                      in_tool = true
-                      current_tool_id = cb["id"]?.try(&.as_s?) || ""
-                      current_tool_name = cb["name"]?.try(&.as_s?) || ""
-                      current_tool_input = String::Builder.new
-                    when "server_tool_use"
-                      server_tool_results << cb
+                  when "content_block_start"
+                    if cb = parsed["content_block"]?
+                      case cb["type"]?.try(&.as_s?)
+                      when "tool_use"
+                        in_tool = true
+                        current_tool_id = cb["id"]?.try(&.as_s?) || ""
+                        current_tool_name = cb["name"]?.try(&.as_s?) || ""
+                        current_tool_input = String::Builder.new
+                      when "server_tool_use"
+                        server_tool_results << cb
+                      end
                     end
-                  end
 
-                when "content_block_delta"
-                  if delta = parsed["delta"]?
-                    case delta["type"]?.try(&.as_s?)
-                    when "text_delta"
-                      text = delta["text"]?.try(&.as_s?) || ""
-                      content << text
-                      block.call(StreamEvent.text_delta(text))
-                    when "input_json_delta"
-                      partial = delta["partial_json"]?.try(&.as_s?) || ""
-                      current_tool_input << partial
+                  when "content_block_delta"
+                    if delta = parsed["delta"]?
+                      case delta["type"]?.try(&.as_s?)
+                      when "text_delta"
+                        text = delta["text"]?.try(&.as_s?) || ""
+                        content << text
+                        block.call(StreamEvent.text_delta(text))
+                      when "input_json_delta"
+                        partial = delta["partial_json"]?.try(&.as_s?) || ""
+                        current_tool_input << partial
+                      end
                     end
-                  end
 
-                when "content_block_stop"
-                  if in_tool
-                    tc = ToolCall.new(
-                      id: current_tool_id,
-                      type: "function",
-                      function: ToolCall::FunctionCall.new(
-                        name: current_tool_name,
-                        arguments: (args_str = current_tool_input.to_s).empty? ? "{}" : args_str,
-                      ),
-                    )
-                    tool_calls << tc
-                    block.call(StreamEvent.tool_use(tc))
-                    in_tool = false
-                  end
-                  # Check if prev block was server tool result
-                  if cb = parsed["content_block"]?
-                    if cb["type"]?.try(&.as_s?) == "web_search_tool_result"
-                      server_tool_results << cb
+                  when "content_block_stop"
+                    if in_tool
+                      tc = ToolCall.new(
+                        id: current_tool_id,
+                        type: "function",
+                        function: ToolCall::FunctionCall.new(
+                          name: current_tool_name,
+                          arguments: (args_str = current_tool_input.to_s).empty? ? "{}" : args_str,
+                        ),
+                      )
+                      tool_calls << tc
+                      block.call(StreamEvent.tool_use(tc))
+                      in_tool = false
                     end
-                  end
+                    # Check if prev block was server tool result
+                    if cb = parsed["content_block"]?
+                      if cb["type"]?.try(&.as_s?) == "web_search_tool_result"
+                        server_tool_results << cb
+                      end
+                    end
 
-                when "message_delta"
-                  if delta = parsed["delta"]?
-                    stop_reason = delta["stop_reason"]?.try(&.as_s?)
-                    finish_reason = case stop_reason
-                                    when "end_turn"   then "stop"
-                                    when "tool_use"   then "tool_calls"
-                                    when "max_tokens" then "length"
-                                    else                   stop_reason || ""
-                                    end
-                  end
-                  if usage = parsed["usage"]?
-                    completion_tokens = usage["output_tokens"]?.try(&.as_i?) || 0
+                  when "message_delta"
+                    if delta = parsed["delta"]?
+                      stop_reason = delta["stop_reason"]?.try(&.as_s?)
+                      finish_reason = case stop_reason
+                                      when "end_turn"   then "stop"
+                                      when "tool_use"   then "tool_calls"
+                                      when "max_tokens" then "length"
+                                      else                   stop_reason || ""
+                                      end
+                    end
+                    if usage = parsed["usage"]?
+                      completion_tokens = usage["output_tokens"]?.try(&.as_i?) || 0
+                    end
                   end
                 end
               end
@@ -254,6 +260,8 @@ module Arcana::AI
         rescue ex : IO::Error
           raise CancelledError.new if ctx.try(&.cancelled?)
           raise ex
+        ensure
+          streaming = false
         end
 
         content_str = content.to_s
@@ -273,6 +281,7 @@ module Arcana::AI
           server_tool_results: server_tool_results,
         )
 
+        final = final.with_retries(stats)
         block.call(StreamEvent.done(final))
         final
       end
@@ -395,6 +404,35 @@ module Arcana::AI
                 end
               end
             end
+          elsif (imgs = msg.images) && !imgs.empty?
+            # Images first, then the text, as Anthropic recommends.
+            json.field "content" do
+              json.array do
+                imgs.each do |img|
+                  json.object do
+                    json.field "type", "image"
+                    json.field "source" do
+                      json.object do
+                        if inline = img.inline
+                          json.field "type", "base64"
+                          json.field "media_type", inline[0]
+                          json.field "data", inline[1]
+                        else
+                          json.field "type", "url"
+                          json.field "url", img.to_url
+                        end
+                      end
+                    end
+                  end
+                end
+                if c = msg.content
+                  json.object do
+                    json.field "type", "text"
+                    json.field "text", c
+                  end
+                end
+              end
+            end
           else
             json.field "content", msg.content || ""
           end
@@ -436,15 +474,18 @@ module Arcana::AI
           end
         end
 
+        finished = false
         spawn do
-          until ctx.cancelled?
+          until ctx.cancelled? || finished
             sleep 100.milliseconds
           end
+          next if finished
           client.close rescue nil
           result.send(CancelledError.new) rescue nil
         end
 
         outcome = result.receive
+        finished = true
         case outcome
         when Exception
           raise outcome

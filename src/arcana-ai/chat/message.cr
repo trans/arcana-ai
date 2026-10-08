@@ -37,6 +37,7 @@ module Arcana::AI
       property name : String?           # optional speaker name
       property tool_calls : Array(ToolCall)?  # assistant messages only
       property tool_call_id : String?   # tool response messages only
+      property images : Array(ImagePart)? # user messages: images to look at
 
       def initialize(
         @role : String,
@@ -44,6 +45,7 @@ module Arcana::AI
         @name : String? = nil,
         @tool_calls : Array(ToolCall)? = nil,
         @tool_call_id : String? = nil,
+        @images : Array(ImagePart)? = nil,
       )
       end
 
@@ -51,8 +53,8 @@ module Arcana::AI
         new("system", content: content)
       end
 
-      def self.user(content : String, name : String? = nil) : self
-        new("user", content: content, name: name)
+      def self.user(content : String, name : String? = nil, images : Array(ImagePart)? = nil) : self
+        new("user", content: content, name: name, images: images)
       end
 
       def self.assistant(content : String) : self
@@ -63,7 +65,30 @@ module Arcana::AI
       def to_json(json : JSON::Builder) : Nil
         json.object do
           json.field "role", @role
-          if c = @content
+          if (imgs = @images) && !imgs.empty?
+            # Content parts: the text, then each image as a URL.
+            json.field "content" do
+              json.array do
+                if c = @content
+                  json.object do
+                    json.field "type", "text"
+                    json.field "text", c
+                  end
+                end
+                imgs.each do |img|
+                  json.object do
+                    json.field "type", "image_url"
+                    json.field "image_url" do
+                      json.object do
+                        json.field "url", img.to_url
+                        json.field "detail", img.detail if img.detail
+                      end
+                    end
+                  end
+                end
+              end
+            end
+          elsif c = @content
             json.field "content", c
           end
           if n = @name

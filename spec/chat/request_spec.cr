@@ -35,7 +35,7 @@ describe Arcana::AI::Chat::Request do
   describe "defaults" do
     it "uses sensible defaults" do
       req = Arcana::AI::Chat::Request.new(messages: [] of Arcana::AI::Chat::Message)
-      req.model.should eq("gpt-4o-mini")
+      req.model.should eq("") # the provider's own model
       req.temperature.should eq(0.7)
       req.max_tokens.should eq(150)
       req.tools.should be_nil

@@ -56,7 +56,8 @@ module Arcana::AI
         })
 
         unless response.success?
-          raise APIError.new(response.status_code, extract_error(response.body), "voyage:embed")
+          raise APIError.new(response.status_code, extract_error(response.body), "voyage:embed",
+            RetryPolicy.retry_after(response.headers, response.body))
         end
 
         parse_response(response.body, model, json_payload)

@@ -41,17 +41,16 @@ module Arcana::AI
 
         emit_request_trace(request, model, payload)
 
-        response = post_api(payload)
-
-        emit_response_trace(request, response)
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "openai:chat")
+        response, stats = retry_policy.run(on_retry: retry_tracer(request)) do
+          r = post_api(payload)
+          emit_response_trace(request, r)
+          raise APIError.from(r, r.body, "openai:chat") unless r.success?
+          r
         end
 
         result = Response.from_openai_json(response.body, provider: "openai")
         result.raw_request = payload
-        result
+        result.with_retries(stats)
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : StreamEvent ->) : Response
@@ -65,12 +64,16 @@ module Arcana::AI
         client.connect_timeout = 30.seconds
         client.read_timeout = 120.seconds
 
+        # The watcher stops when the stream ends, so it doesn't outlive the call.
+        streaming = true
         if c = ctx
           spawn do
-            until c.cancelled?
+            while streaming && !c.cancelled?
               sleep 100.milliseconds
             end
-            client.close rescue nil
+            if streaming
+              client.close rescue nil
+            end
           end
         end
 
@@ -82,64 +85,68 @@ module Arcana::AI
         completion_tokens = 0
         cached_tokens : Int32? = nil
 
+        stats = RetryStats.new
         begin
-          client.post(uri.request_target, headers: headers, body: payload) do |response|
-            unless response.success?
-              body = response.body_io.gets_to_end
-              raise APIError.new(response.status_code, body, "openai:chat:stream")
-            end
-
-            response.body_io.each_line do |line|
-              raise CancelledError.new if ctx.try(&.cancelled?)
-
-              next unless line.starts_with?("data: ")
-              data = line[6..]
-              next if data == "[DONE]"
-
-              parsed = JSON.parse(data) rescue next
-
-              if m = parsed["model"]?.try(&.as_s?)
-                response_model = m
+          _, stats = retry_policy.run(ctx, retry_tracer(request)) do |attempt|
+            client.post(uri.request_target, headers: headers, body: payload) do |response|
+              unless response.success?
+                body = response.body_io.gets_to_end
+                raise APIError.from(response, body, "openai:chat:stream")
               end
+              attempt.started! # past this point, a failure can't be retried
 
-              if choices = parsed["choices"]?.try(&.as_a?)
-                choice = choices[0]?
-                next unless choice
+              response.body_io.each_line do |line|
+                raise CancelledError.new if ctx.try(&.cancelled?)
 
-                if fr = choice["finish_reason"]?.try(&.as_s?)
-                  finish_reason = fr
+                next unless line.starts_with?("data: ")
+                data = line[6..]
+                next if data == "[DONE]"
+
+                parsed = JSON.parse(data) rescue next
+
+                if m = parsed["model"]?.try(&.as_s?)
+                  response_model = m
                 end
 
-                if delta = choice["delta"]?
-                  # Text content
-                  if text = delta["content"]?.try(&.as_s?)
-                    content << text
-                    block.call(StreamEvent.text_delta(text))
+                if choices = parsed["choices"]?.try(&.as_a?)
+                  choice = choices[0]?
+                  next unless choice
+
+                  if fr = choice["finish_reason"]?.try(&.as_s?)
+                    finish_reason = fr
                   end
 
-                  # Tool calls
-                  if tcs = delta["tool_calls"]?.try(&.as_a?)
-                    tcs.each do |tc|
-                      idx = tc["index"]?.try(&.as_i?) || 0
-                      unless tool_calls_map.has_key?(idx)
-                        tool_calls_map[idx] = {
-                          id:        tc["id"]?.try(&.as_s?) || "",
-                          name:      tc["function"]?.try { |f| f["name"]?.try(&.as_s?) } || "",
-                          arguments: String::Builder.new,
-                        }
-                      end
-                      if args = tc["function"]?.try { |f| f["arguments"]?.try(&.as_s?) }
-                        tool_calls_map[idx][:arguments] << args
+                  if delta = choice["delta"]?
+                    # Text content
+                    if text = delta["content"]?.try(&.as_s?)
+                      content << text
+                      block.call(StreamEvent.text_delta(text))
+                    end
+
+                    # Tool calls
+                    if tcs = delta["tool_calls"]?.try(&.as_a?)
+                      tcs.each do |tc|
+                        idx = tc["index"]?.try(&.as_i?) || 0
+                        unless tool_calls_map.has_key?(idx)
+                          tool_calls_map[idx] = {
+                            id:        tc["id"]?.try(&.as_s?) || "",
+                            name:      tc["function"]?.try { |f| f["name"]?.try(&.as_s?) } || "",
+                            arguments: String::Builder.new,
+                          }
+                        end
+                        if args = tc["function"]?.try { |f| f["arguments"]?.try(&.as_s?) }
+                          tool_calls_map[idx][:arguments] << args
+                        end
                       end
                     end
                   end
                 end
-              end
 
-              if usage = parsed["usage"]?
-                prompt_tokens = usage["prompt_tokens"]?.try(&.as_i?) || prompt_tokens
-                completion_tokens = usage["completion_tokens"]?.try(&.as_i?) || completion_tokens
-                cached_tokens = usage["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?) || cached_tokens
+                if usage = parsed["usage"]?
+                  prompt_tokens = usage["prompt_tokens"]?.try(&.as_i?) || prompt_tokens
+                  completion_tokens = usage["completion_tokens"]?.try(&.as_i?) || completion_tokens
+                  cached_tokens = usage["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?) || cached_tokens
+                end
               end
             end
           end
@@ -148,6 +155,8 @@ module Arcana::AI
         rescue ex : IO::Error
           raise CancelledError.new if ctx.try(&.cancelled?)
           raise ex
+        ensure
+          streaming = false
         end
 
         tool_calls = tool_calls_map.to_a.sort_by(&.[0]).map do |_, tc|
@@ -178,6 +187,7 @@ module Arcana::AI
           cache_read_tokens: cached_tokens,
         )
 
+        final = final.with_retries(stats)
         block.call(StreamEvent.done(final))
         final
       end
@@ -189,17 +199,16 @@ module Arcana::AI
         payload = build_payload(request, model)
         emit_request_trace(request, model, payload)
 
-        response = post_api_cancellable(payload, ctx)
-
-        emit_response_trace(request, response)
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "openai:chat")
+        response, stats = retry_policy.run(ctx, retry_tracer(request)) do
+          r = post_api_cancellable(payload, ctx)
+          emit_response_trace(request, r)
+          raise APIError.from(r, r.body, "openai:chat") unless r.success?
+          r
         end
 
         result = Response.from_openai_json(response.body, provider: "openai")
         result.raw_request = payload
-        result
+        result.with_retries(stats)
       end
 
       private def build_payload(request : Request, model : String, stream : Bool = false) : String
@@ -267,15 +276,18 @@ module Arcana::AI
           end
         end
 
+        finished = false
         spawn do
-          until ctx.cancelled?
+          until ctx.cancelled? || finished
             sleep 100.milliseconds
           end
+          next if finished
           client.close rescue nil
           result.send(CancelledError.new) rescue nil
         end
 
         outcome = result.receive
+        finished = true
         case outcome
         when Exception
           raise outcome

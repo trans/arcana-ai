@@ -2,7 +2,7 @@ module Arcana::AI
   module Chat
     struct Request
       property messages : Array(Message)
-      property model : String
+      property model : String # empty = the provider's own model
       property temperature : Float64
       property max_tokens : Int32
       property tools : Array(Tool)?
@@ -13,7 +13,7 @@ module Arcana::AI
 
       def initialize(
         @messages : Array(Message),
-        @model : String = "gpt-4o-mini",
+        @model : String = "",
         @temperature : Float64 = 0.7,
         @max_tokens : Int32 = 150,
         @tools : Array(Tool)? = nil,
@@ -27,7 +27,7 @@ module Arcana::AI
       # Build from a History object.
       def self.from_history(
         history : History,
-        model : String = "gpt-4o-mini",
+        model : String = "",
         temperature : Float64 = 0.7,
         max_tokens : Int32 = 150,
         tools : Array(Tool)? = nil,

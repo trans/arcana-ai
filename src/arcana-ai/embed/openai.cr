@@ -57,7 +57,7 @@ module Arcana::AI
         })
 
         unless response.success?
-          raise APIError.new(response.status_code, response.body, "openai:embed")
+          raise APIError.from(response, response.body, "openai:embed")
         end
 
         parse_response(response.body, model, json_payload)

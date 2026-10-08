@@ -44,6 +44,21 @@ response = chat.complete(request)
 puts response.content
 ```
 
+Images in a message (a file or bytes, or a URL the provider fetches):
+
+```crystal
+Arcana::AI::Chat::Message.user("What does this picture show?", images: [
+  Arcana::AI::Chat::ImagePart.file("room.webp", detail: "low"),
+])
+```
+
+Chat calls retry rate limits (429), server errors (500, 502, 503, 504,
+Anthropic's 529) and network errors up to 3 times, waiting as long as the
+provider asks (`Retry-After`, Gemini's `retryDelay`) or backing off
+0.5 s, 1 s, 2 s with jitter. They never retry OpenAI's `insufficient_quota`.
+`response.retries` and `response.retry_wait` say what happened; set
+`chat.retry_policy = Arcana::AI::RetryPolicy.none` to turn it off.
+
 Via the registry:
 
 ```crystal

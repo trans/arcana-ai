@@ -9,6 +9,10 @@ module Arcana::AI
       property raw_request : String
       property raw_response : String
 
+      # Retries `embed_with_retry` needed, and the time spent waiting.
+      property retries : Int32 = 0
+      property retry_wait : Time::Span = Time::Span.zero
+
       def initialize(
         @embeddings : Array(Array(Float64)),
         @token_counts : Array(Int32) = [] of Int32,

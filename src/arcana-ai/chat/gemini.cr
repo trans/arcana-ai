@@ -41,15 +41,14 @@ module Arcana::AI
 
         emit_request_trace(request, model, payload)
 
-        response = post_api(model, payload)
-
-        emit_response_trace(request, response)
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "gemini:chat")
+        response, stats = retry_policy.run(on_retry: retry_tracer(request)) do
+          r = post_api(model, payload)
+          emit_response_trace(request, r)
+          raise APIError.from(r, r.body, "gemini:chat") unless r.success?
+          r
         end
 
-        parse_response(response.body, payload)
+        parse_response(response.body, payload).with_retries(stats)
       end
 
       def complete(request : Request, ctx : Context) : Response
@@ -60,15 +59,14 @@ module Arcana::AI
 
         emit_request_trace(request, model, payload)
 
-        response = post_api_cancellable(model, payload, ctx)
-
-        emit_response_trace(request, response)
-
-        unless response.success?
-          raise APIError.new(response.status_code, response.body, "gemini:chat")
+        response, stats = retry_policy.run(ctx, retry_tracer(request)) do
+          r = post_api_cancellable(model, payload, ctx)
+          emit_response_trace(request, r)
+          raise APIError.from(r, r.body, "gemini:chat") unless r.success?
+          r
         end
 
-        parse_response(response.body, payload)
+        parse_response(response.body, payload).with_retries(stats)
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : StreamEvent ->) : Response
@@ -86,12 +84,16 @@ module Arcana::AI
         client.connect_timeout = 30.seconds
         client.read_timeout = 120.seconds
 
+        # The watcher stops when the stream ends, so it doesn't outlive the call.
+        streaming = true
         if c = ctx
           spawn do
-            until c.cancelled?
+            while streaming && !c.cancelled?
               sleep 100.milliseconds
             end
-            client.close rescue nil
+            if streaming
+              client.close rescue nil
+            end
           end
         end
 
@@ -102,54 +104,58 @@ module Arcana::AI
         prompt_tokens = 0
         completion_tokens = 0
 
+        stats = RetryStats.new
         begin
-          client.post(uri.request_target, headers: headers, body: payload) do |response|
-            unless response.success?
-              body = response.body_io.gets_to_end
-              raise APIError.new(response.status_code, body, "gemini:chat:stream")
-            end
+          _, stats = retry_policy.run(ctx, retry_tracer(request)) do |attempt|
+            client.post(uri.request_target, headers: headers, body: payload) do |response|
+              unless response.success?
+                body = response.body_io.gets_to_end
+                raise APIError.from(response, body, "gemini:chat:stream")
+              end
+              attempt.started! # past this point, a failure can't be retried
 
-            response.body_io.each_line do |line|
-              raise CancelledError.new if ctx.try(&.cancelled?)
+              response.body_io.each_line do |line|
+                raise CancelledError.new if ctx.try(&.cancelled?)
 
-              next unless line.starts_with?("data: ")
-              data = line[6..]
-              next if data.empty?
+                next unless line.starts_with?("data: ")
+                data = line[6..]
+                next if data.empty?
 
-              parsed = JSON.parse(data) rescue next
+                parsed = JSON.parse(data) rescue next
 
-              if candidates = parsed["candidates"]?.try(&.as_a?)
-                candidate = candidates[0]?
-                next unless candidate
+                if candidates = parsed["candidates"]?.try(&.as_a?)
+                  candidate = candidates[0]?
+                  next unless candidate
 
-                if fr = candidate["finishReason"]?.try(&.as_s?)
-                  finish_reason = normalize_finish_reason(fr)
-                end
+                  if fr = candidate["finishReason"]?.try(&.as_s?)
+                    finish_reason = normalize_finish_reason(fr)
+                  end
 
-                if parts = candidate["content"]?.try { |c| c["parts"]?.try(&.as_a?) }
-                  parts.each do |part|
-                    if text = part["text"]?.try(&.as_s?)
-                      content << text
-                      block.call(StreamEvent.text_delta(text))
-                    elsif fc = part["functionCall"]?
-                      tc = ToolCall.new(
-                        id: Random::Secure.hex(12),
-                        type: "function",
-                        function: ToolCall::FunctionCall.new(
-                          name: fc["name"]?.try(&.as_s?) || "",
-                          arguments: (fc["args"]? || JSON::Any.new({} of String => JSON::Any)).to_json,
-                        ),
-                      )
-                      tool_calls << tc
-                      block.call(StreamEvent.tool_use(tc))
+                  if parts = candidate["content"]?.try { |c| c["parts"]?.try(&.as_a?) }
+                    parts.each do |part|
+                      if text = part["text"]?.try(&.as_s?)
+                        content << text
+                        block.call(StreamEvent.text_delta(text))
+                      elsif fc = part["functionCall"]?
+                        tc = ToolCall.new(
+                          id: Random::Secure.hex(12),
+                          type: "function",
+                          function: ToolCall::FunctionCall.new(
+                            name: fc["name"]?.try(&.as_s?) || "",
+                            arguments: (fc["args"]? || JSON::Any.new({} of String => JSON::Any)).to_json,
+                          ),
+                        )
+                        tool_calls << tc
+                        block.call(StreamEvent.tool_use(tc))
+                      end
                     end
                   end
                 end
-              end
 
-              if usage = parsed["usageMetadata"]?
-                prompt_tokens = usage["promptTokenCount"]?.try(&.as_i?) || prompt_tokens
-                completion_tokens = usage["candidatesTokenCount"]?.try(&.as_i?) || completion_tokens
+                if usage = parsed["usageMetadata"]?
+                  prompt_tokens = usage["promptTokenCount"]?.try(&.as_i?) || prompt_tokens
+                  completion_tokens = usage["candidatesTokenCount"]?.try(&.as_i?) || completion_tokens
+                end
               end
             end
           end
@@ -158,6 +164,8 @@ module Arcana::AI
         rescue ex : IO::Error
           raise CancelledError.new if ctx.try(&.cancelled?)
           raise ex
+        ensure
+          streaming = false
         end
 
         content_str = content.to_s
@@ -174,6 +182,7 @@ module Arcana::AI
           completion_tokens: completion_tokens,
         )
 
+        final = final.with_retries(stats)
         block.call(StreamEvent.done(final))
         final
       end
@@ -290,6 +299,18 @@ module Arcana::AI
                   end
                 end
               else
+                msg.images.try &.each do |img|
+                  inline = img.inline ||
+                           raise ConfigError.new("Gemini can't fetch image URLs; pass the image's bytes (ImagePart.bytes or ImagePart.file)")
+                  json.object do
+                    json.field "inlineData" do
+                      json.object do
+                        json.field "mimeType", inline[0]
+                        json.field "data", inline[1]
+                      end
+                    end
+                  end
+                end
                 json.object { json.field "text", msg.content || "" }
               end
             end
@@ -404,15 +425,18 @@ module Arcana::AI
           end
         end
 
+        finished = false
         spawn do
-          until ctx.cancelled?
+          until ctx.cancelled? || finished
             sleep 100.milliseconds
           end
+          next if finished
           client.close rescue nil
           result.send(CancelledError.new) rescue nil
         end
 
         outcome = result.receive
+        finished = true
         case outcome
         when Exception
           raise outcome

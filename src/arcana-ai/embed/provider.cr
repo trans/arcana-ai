@@ -49,17 +49,15 @@ module Arcana::AI
         )
       end
 
-      # Embed with automatic retry on transient errors (429, 503, 502, 500).
+      # Embed, retrying rate limits, server errors and network errors the
+      # way chat calls do (see `RetryPolicy`), including waiting as long as
+      # the provider asks. The result records the retries.
       def embed_with_retry(request : Request, max_retries : Int32 = 3, base_delay : Float64 = 1.0) : Result
-        retries = 0
-        loop do
-          return embed(request)
-        rescue ex : APIError
-          raise ex unless retryable?(ex.status_code) && retries < max_retries
-          retries += 1
-          delay = base_delay * (2 ** (retries - 1)) # exponential backoff
-          sleep delay.seconds
-        end
+        policy = RetryPolicy.new(max_retries: max_retries, base_delay: base_delay.seconds)
+        result, stats = policy.run { embed(request) }
+        result.retries = stats.retries
+        result.retry_wait = stats.waited
+        result
       end
 
       # Combines batching and retry.
@@ -74,6 +72,8 @@ module Arcana::AI
         raw_responses = [] of String
         model_name = ""
         provider_name = ""
+        retries = 0
+        retry_wait = Time::Span.zero
 
         texts.each_slice(batch_size) do |batch|
           batch_request = Request.new(
@@ -92,9 +92,11 @@ module Arcana::AI
           raw_responses << result.raw_response
           model_name = result.model
           provider_name = result.provider
+          retries += result.retries
+          retry_wait += result.retry_wait
         end
 
-        Result.new(
+        combined = Result.new(
           embeddings: all_embeddings,
           token_counts: all_token_counts,
           total_tokens: total_tokens,
@@ -103,10 +105,9 @@ module Arcana::AI
           raw_request: raw_requests.join("\n---\n"),
           raw_response: raw_responses.join("\n---\n"),
         )
-      end
-
-      private def retryable?(status_code : Int32) : Bool
-        status_code.in?(429, 500, 502, 503)
+        combined.retries = retries
+        combined.retry_wait = retry_wait
+        combined
       end
     end
   end

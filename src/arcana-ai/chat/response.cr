@@ -38,6 +38,11 @@ module Arcana::AI
       # Server-side tool results (e.g. web_search results).
       property server_tool_results : Array(JSON::Any)
 
+      # Retries the call needed (rate limits, server or network errors)
+      # and the time spent waiting between tries. See `RetryPolicy`.
+      property retries : Int32 = 0
+      property retry_wait : Time::Span = Time::Span.zero
+
       def initialize(
         @content : String? = nil,
         @tool_calls : Array(ToolCall) = [] of ToolCall,
@@ -57,6 +62,14 @@ module Arcana::AI
       end
 
       # Did the model return any tool calls?
+      # This response with the retry record of the call that produced it.
+      def with_retries(stats : RetryStats) : self
+        copy = self
+        copy.retries = stats.retries
+        copy.retry_wait = stats.waited
+        copy
+      end
+
       def has_tool_calls? : Bool
         !@tool_calls.empty?
       end
