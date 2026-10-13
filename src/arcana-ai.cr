@@ -46,6 +46,6 @@ require "./arcana-ai/pricing"
 
 module Arcana
   module AI
-    VERSION = "0.5.0"
+    VERSION = "0.5.1"
   end
 end
