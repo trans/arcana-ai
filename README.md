@@ -25,7 +25,7 @@ Add to your `shard.yml`:
 dependencies:
   arcana-ai:
     github: trans/arcana-ai
-    version: ~> 0.5.2
+    version: ~> 0.5.3
 ```
 
 Then `shards install`.
