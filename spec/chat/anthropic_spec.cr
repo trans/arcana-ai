@@ -51,8 +51,8 @@ describe Arcana::AI::Chat::Anthropic do
       resp.finish_reason.should eq("stop")
       resp.model.should eq("claude-sonnet-4-20250514")
       resp.provider.should eq("anthropic")
-      resp.prompt_tokens.should eq(10)
-      resp.completion_tokens.should eq(5)
+      resp.@prompt_tokens.should eq(10)
+      resp.@completion_tokens.should eq(5)
       resp.has_tool_calls?.should be_false
     end
 
@@ -106,10 +106,10 @@ describe Arcana::AI::Chat::Anthropic do
       })
 
       resp = provider.test_parse_response(body)
-      resp.prompt_tokens.should eq(100)
-      resp.completion_tokens.should eq(20)
-      resp.cache_read_tokens.should eq(80)
-      resp.cache_creation_tokens.should eq(15)
+      resp.@prompt_tokens.should eq(100)
+      resp.@completion_tokens.should eq(20)
+      resp.@cache_read_tokens.should eq(80)
+      resp.@cache_creation_tokens.should eq(15)
     end
 
     it "handles missing cache tokens gracefully" do
@@ -121,8 +121,8 @@ describe Arcana::AI::Chat::Anthropic do
       })
 
       resp = provider.test_parse_response(body)
-      resp.cache_read_tokens.should be_nil
-      resp.cache_creation_tokens.should be_nil
+      resp.@cache_read_tokens.should be_nil
+      resp.@cache_creation_tokens.should be_nil
     end
 
     it "captures server tool results" do

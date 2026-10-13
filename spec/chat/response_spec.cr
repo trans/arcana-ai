@@ -17,8 +17,8 @@ describe Arcana::AI::Chat::Response do
       resp.content.should eq("Hello!")
       resp.finish_reason.should eq("stop")
       resp.model.should eq("gpt-4o-mini")
-      resp.prompt_tokens.should eq(10)
-      resp.completion_tokens.should eq(5)
+      resp.@prompt_tokens.should eq(10)
+      resp.@completion_tokens.should eq(5)
       resp.has_tool_calls?.should be_false
       resp.raw_json.should eq(raw)
     end
@@ -104,8 +104,8 @@ describe Arcana::AI::Chat::Response do
         }
       })
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.reasoning_tokens.should eq(87)
-      resp.completion_tokens.should eq(100)
+      resp.@reasoning_tokens.should eq(87)
+      resp.@completion_tokens.should eq(100)
     end
 
     it "leaves reasoning_tokens nil when the response doesn't include it" do
@@ -114,15 +114,15 @@ describe Arcana::AI::Chat::Response do
         "usage": {"prompt_tokens": 5, "completion_tokens": 3}
       })
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.reasoning_tokens.should be_nil
+      resp.@reasoning_tokens.should be_nil
     end
 
     it "reads OpenAI's cached prompt tokens as cache_read_tokens" do
       raw = %({"model":"gpt-4o-mini","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
         "usage":{"prompt_tokens":2048,"completion_tokens":12,"prompt_tokens_details":{"cached_tokens":1920}}})
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.prompt_tokens.should eq(2048)
-      resp.cache_read_tokens.should eq(1920)
+      resp.@prompt_tokens.should eq(2048)
+      resp.@cache_read_tokens.should eq(1920)
     end
   end
 end

@@ -16,31 +16,35 @@ module Arcana::AI
       # `Pricing` prices it.
       property usage : Usage?
 
-      # Token counts as the provider reported them, in its own terms:
-      # OpenAI's and Gemini's prompt_tokens include cached tokens,
-      # Anthropic's don't. `usage` evens these out.
-      property prompt_tokens : Int32?
-      property completion_tokens : Int32?
-
-      # Prompt caching tokens. cache_read_tokens is also OpenAI's
-      # usage.prompt_tokens_details.cached_tokens (the part of prompt_tokens
-      # served from the cache).
-      property cache_read_tokens : Int32?
-      property cache_creation_tokens : Int32?
-
-      # Chain-of-thought / reasoning fields, when the model supports them.
-      #
-      # `thinking_content` — the raw reasoning text if the provider
-      # surfaces it (Anthropic extended thinking, Gemini with
-      # includeThoughts). OpenAI o-series never surfaces the reasoning
-      # itself, so this stays nil for OpenAI even when reasoning ran.
-      #
-      # `reasoning_tokens` — the token count the model spent on
-      # reasoning, when reported (OpenAI's
-      # completion_tokens_details.reasoning_tokens, Anthropic's cached
-      # thinking budget). Useful for cost tracking.
+      # The raw reasoning text if the provider surfaces it (Anthropic
+      # extended thinking, Gemini with includeThoughts). OpenAI o-series
+      # never surfaces the reasoning itself, so this stays nil for OpenAI
+      # even when reasoning ran.
       property thinking_content : String?
-      property reasoning_tokens : Int32?
+
+      # Deprecated token counts, as each provider reported them in its own
+      # terms (OpenAI's and Gemini's prompt_tokens include cached tokens,
+      # Anthropic's don't; Gemini's completion_tokens leave out thinking).
+      # `usage` has them in the same terms for every provider. They go
+      # away in arcana-ai 0.6.0.
+      {% for field in [
+                        {"prompt_tokens", "`usage.prompt` (the whole prompt) or `usage.input` (uncached input)"},
+                        {"completion_tokens", "`usage.output` (reasoning included)"},
+                        {"cache_read_tokens", "`usage.cache_read`"},
+                        {"cache_creation_tokens", "`usage.cache_write` + `usage.cache_write_1h`"},
+                        {"reasoning_tokens", "`usage.reasoning`"},
+                      ] %}
+        @{{field[0].id}} : Int32?
+
+        @[Deprecated("Use {{field[1].id}}, the same for every provider, and `cost` for what the call cost. Removed in arcana-ai 0.6.0.")]
+        def {{field[0].id}} : Int32?
+          @{{field[0].id}}
+        end
+
+        @[Deprecated("Set `usage`. Removed in arcana-ai 0.6.0.")]
+        def {{field[0].id}}=(@{{field[0].id}} : Int32?)
+        end
+      {% end %}
 
       # Server-side tool results (e.g. web_search results).
       property server_tool_results : Array(JSON::Any)

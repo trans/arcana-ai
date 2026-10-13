@@ -24,7 +24,7 @@ Add to your `shard.yml`:
 dependencies:
   arcana-ai:
     github: trans/arcana-ai
-    version: ~> 0.5.0
+    version: ~> 0.5.1
 ```
 
 Then `shards install`.
@@ -112,6 +112,12 @@ rates = Arcana::AI::Pricing::Table.default.merge(Arcana::AI::Pricing::Table.from
 response.cost(table: rates)
 Arcana::AI::Pricing.cost(provider, model, usage, at: logged_at, table: rates) # price a stored call
 ```
+
+The older counts in each provider's own terms (`Chat::Response`'s
+`prompt_tokens`, `completion_tokens`, `cache_read_tokens`,
+`cache_creation_tokens` and `reasoning_tokens`, and `Embed::Result`'s
+`total_tokens`) are deprecated: the compiler warns where you use them,
+naming what replaces each. They go away in 0.6.0.
 
 ## Development
 

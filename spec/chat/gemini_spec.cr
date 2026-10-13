@@ -57,8 +57,8 @@ describe Arcana::AI::Chat::Gemini do
       resp.finish_reason.should eq("stop")
       resp.model.should eq("gemini-2.5-flash")
       resp.provider.should eq("gemini")
-      resp.prompt_tokens.should eq(10)
-      resp.completion_tokens.should eq(5)
+      resp.@prompt_tokens.should eq(10)
+      resp.@completion_tokens.should eq(5)
       resp.has_tool_calls?.should be_false
     end
 
@@ -116,8 +116,8 @@ describe Arcana::AI::Chat::Gemini do
       })
 
       resp = provider.test_parse_response(body)
-      resp.prompt_tokens.should be_nil
-      resp.completion_tokens.should be_nil
+      resp.@prompt_tokens.should be_nil
+      resp.@completion_tokens.should be_nil
     end
 
     it "stores raw request and response" do
@@ -149,7 +149,7 @@ describe Arcana::AI::Chat::Gemini do
       resp = provider.test_parse_response(body)
       resp.content.should eq("Why did the chicken cross the road?")
       resp.thinking_content.should eq("Let me think about this...\n\nThe user wants a joke.")
-      resp.reasoning_tokens.should eq(42)
+      resp.@reasoning_tokens.should eq(42)
     end
   end
 

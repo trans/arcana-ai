@@ -11,7 +11,7 @@ describe Arcana::AI::Embed::Result do
     )
 
     result.embeddings.size.should eq(2)
-    result.total_tokens.should eq(12)
+    result.@total_tokens.should eq(12)
     result.model.should eq("text-embedding-3-small")
   end
 

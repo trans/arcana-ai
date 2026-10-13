@@ -32,7 +32,7 @@ module Arcana::AI
 
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
-          total_tokens += result.total_tokens
+          total_tokens += result.@total_tokens # deprecated; goes in 0.6.0
           usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response
@@ -91,7 +91,7 @@ module Arcana::AI
 
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
-          total_tokens += result.total_tokens
+          total_tokens += result.@total_tokens # deprecated; goes in 0.6.0
           usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response

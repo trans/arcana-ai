@@ -3,7 +3,19 @@ module Arcana::AI
     struct Result
       property embeddings : Array(Array(Float64))
       property token_counts : Array(Int32)
-      property total_tokens : Int32
+
+      # Deprecated: 0 when the provider reported no count, where `usage`
+      # is nil. Goes away in arcana-ai 0.6.0.
+      @total_tokens : Int32
+
+      @[Deprecated("Use `usage.input` (nil `usage` means the provider reported none), and `cost` for what the call cost. Removed in arcana-ai 0.6.0.")]
+      def total_tokens : Int32
+        @total_tokens
+      end
+
+      @[Deprecated("Set `usage`. Removed in arcana-ai 0.6.0.")]
+      def total_tokens=(@total_tokens : Int32)
+      end
 
       # The tokens the provider billed, as a `Usage` (all `input`); nil
       # when it reported none. `Pricing` prices it.

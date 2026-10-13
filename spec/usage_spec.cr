@@ -216,7 +216,7 @@ describe Arcana::AI::Usage do
       serve(body) do |url|
         r = Arcana::AI::Embed::Voyage.new(api_key: "k", endpoint: "#{url}/v1/embeddings").embed(Arcana::AI::Embed::Request.single("hi"))
         r.usage.should be_nil
-        r.total_tokens.should eq(0)
+        r.@total_tokens.should eq(0)
       end
     end
   end
