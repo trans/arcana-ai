@@ -220,11 +220,14 @@ module Arcana::AI
       end
 
       private def build_payload(request : Request, model : String, stream : Bool = false) : String
-        # Reasoning-enabled requests target the o-series (o1, o3,
-        # o4-mini, gpt-5-thinking, etc.), which use `max_completion_tokens`
-        # instead of `max_tokens` and take a `reasoning_effort` param.
-        # Non-reasoning models keep the classic shape.
+        # OpenAI takes `max_completion_tokens` for every model, and the
+        # o-series and every model from gpt-5 on reject `max_tokens`.
+        # OpenAI-compatible services keep `max_tokens`, except for
+        # reasoning requests. Reasoning requests also take a
+        # `reasoning_effort` param.
         reasoning = request.thinking
+        reasoning = nil unless reasoning && reasoning.enabled
+        completion_tokens = name == "openai" || reasoning
 
         JSON.build do |json|
           json.object do
@@ -236,14 +239,10 @@ module Arcana::AI
                 request.messages.each(&.to_json(json))
               end
             end
-            json.field "temperature", request.temperature
+            json.field "temperature", request.temperature if send_temperature?(request, model)
 
-            if reasoning && reasoning.enabled
-              json.field "max_completion_tokens", request.max_tokens
-              json.field "reasoning_effort", reasoning.effort || "medium"
-            else
-              json.field "max_tokens", request.max_tokens
-            end
+            json.field completion_tokens ? "max_completion_tokens" : "max_tokens", request.max_tokens
+            json.field "reasoning_effort", reasoning.effort || "medium" if reasoning
 
             if tools = request.tools
               json.field "tools" do
@@ -255,6 +254,17 @@ module Arcana::AI
             end
           end
         end
+      end
+
+      # Most of OpenAI's models from gpt-5 on, and the o-series, take
+      # only their own default temperature (1) and reject any other. So
+      # the request's default (0.7) goes only to the GPT-4 and GPT-3.5
+      # models, which have always had it, and to compatible services. A
+      # temperature the caller picked always goes.
+      private def send_temperature?(request : Request, model : String) : Bool
+        return true unless name == "openai" && request.temperature == 0.7
+        base = model.lchop("ft:")
+        base.starts_with?("gpt-4") || base.starts_with?("gpt-3.5")
       end
 
       private def post_api(payload : String) : HTTP::Client::Response
