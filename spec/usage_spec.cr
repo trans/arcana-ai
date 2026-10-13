@@ -202,6 +202,36 @@ describe Arcana::AI::Usage do
     end
   end
 
+  describe "from OpenAI images" do
+    it "splits text from images, in and out" do
+      u = Arcana::AI::Usage.from_openai_image(JSON.parse(%({"input_tokens": 1044, "output_tokens": 210,
+        "input_tokens_details": {"image_tokens": 1024, "text_tokens": 20},
+        "output_tokens_details": {"image_tokens": 196, "text_tokens": 14}}))).not_nil!
+      {u.input, u.image_input, u.output, u.image_output}.should eq({20, 1024, 14, 196})
+      u.prompt.should eq(1044)
+    end
+
+    it "counts all the output as image tokens when it isn't split" do
+      u = Arcana::AI::Usage.from_openai_image(JSON.parse(%({"input_tokens": 50, "output_tokens": 50,
+        "input_tokens_details": {"text_tokens": 10, "image_tokens": 40}}))).not_nil!
+      {u.output, u.image_output}.should eq({0, 50})
+    end
+
+    it "is nil when the split doesn't account for every token" do
+      Arcana::AI::Usage.from_openai_image(JSON.parse(%({"input_tokens": 50, "output_tokens": 50}))).should be_nil
+      Arcana::AI::Usage.from_openai_image(JSON.parse(%({"input_tokens": 50, "output_tokens": 50,
+        "input_tokens_details": {"text_tokens": 10, "image_tokens": 30}}))).should be_nil
+      Arcana::AI::Usage.from_openai_image(JSON.parse(%({"input_tokens": 10, "output_tokens": 50,
+        "input_tokens_details": {"text_tokens": 10, "image_tokens": 0},
+        "output_tokens_details": {"image_tokens": 40, "text_tokens": 0}}))).should be_nil
+    end
+  end
+
+  it "comes from the end of an OpenAI speech stream, as audio out" do
+    u = Arcana::AI::Usage.from_openai_speech(JSON.parse(%({"input_tokens": 3, "output_tokens": 37, "total_tokens": 40}))).not_nil!
+    {u.input, u.output, u.audio_output}.should eq({3, 0, 37})
+  end
+
   describe "from embeddings" do
     it "is the tokens the provider reported" do
       body = %({"data": [{"index": 0, "embedding": [0.1, 0.2]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 8, "total_tokens": 8}})
@@ -223,8 +253,8 @@ describe Arcana::AI::Usage do
 
   it "adds up, keeping a tier both share" do
     a = Arcana::AI::Usage.new(input: 5, output: 2, tier: "standard")
-    b = Arcana::AI::Usage.new(input: 7, cache_read: 3, tier: "standard", reasoning: 1)
+    b = Arcana::AI::Usage.new(input: 7, cache_read: 3, tier: "standard", reasoning: 1, image_output: 4)
     sum = a + b
-    {sum.input, sum.output, sum.cache_read, sum.reasoning, sum.tier}.should eq({12, 2, 3, 1, "standard"})
+    {sum.input, sum.output, sum.cache_read, sum.reasoning, sum.image_output, sum.tier}.should eq({12, 2, 3, 1, 4, "standard"})
   end
 end

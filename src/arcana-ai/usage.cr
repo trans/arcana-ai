@@ -12,8 +12,14 @@ module Arcana::AI
   # - `cache_write`: input tokens written to the cache at the provider's
   #   standard write rate (Anthropic's 5-minute cache, OpenAI's cache).
   # - `cache_write_1h`: input tokens written to Anthropic's 1-hour cache.
-  # - `output`: output tokens, reasoning included.
+  # - `output`: output tokens, reasoning included. Text only, for models
+  #   that also make images or audio.
   # - `reasoning`: the part of `output` spent reasoning, when reported.
+  # - `image_input`: image tokens in the input, for image models that
+  #   price them apart from text (OpenAI's GPT Image). Chat models count
+  #   input images in `input`.
+  # - `image_output`: image tokens generated.
+  # - `audio_output`: audio tokens generated (OpenAI's speech models).
   # - `web_searches`, `code_executions`: server-side tool calls.
   # - `tier`: the service tier the call ran on, `"standard"` for the
   #   provider's standard tier, nil when not reported.
@@ -31,6 +37,9 @@ module Arcana::AI
     getter cache_write_1h : Int64
     getter output : Int64
     getter reasoning : Int64?
+    getter image_input : Int64
+    getter image_output : Int64
+    getter audio_output : Int64
     getter web_searches : Int64
     getter code_executions : Int64
     getter tier : String?
@@ -43,6 +52,9 @@ module Arcana::AI
       @cache_write : Int64 = 0_i64,
       @cache_write_1h : Int64 = 0_i64,
       @reasoning : Int64? = nil,
+      @image_input : Int64 = 0_i64,
+      @image_output : Int64 = 0_i64,
+      @audio_output : Int64 = 0_i64,
       @web_searches : Int64 = 0_i64,
       @code_executions : Int64 = 0_i64,
       @tier : String? = nil,
@@ -50,10 +62,10 @@ module Arcana::AI
     )
     end
 
-    # The whole prompt: input plus cache reads and writes. Prices that
-    # change with prompt length go by this.
+    # The whole prompt: input plus cache reads and writes, and input
+    # images. Prices that change with prompt length go by this.
     def prompt : Int64
-      input + cache_read + cache_write + cache_write_1h
+      input + cache_read + cache_write + cache_write_1h + image_input
     end
 
     # Two calls' usage together, as for an embedding run split into
@@ -66,6 +78,9 @@ module Arcana::AI
         cache_write: cache_write + other.cache_write,
         cache_write_1h: cache_write_1h + other.cache_write_1h,
         reasoning: (r = reasoning) && (o = other.reasoning) ? r + o : (reasoning || other.reasoning),
+        image_input: image_input + other.image_input,
+        image_output: image_output + other.image_output,
+        audio_output: audio_output + other.audio_output,
         web_searches: web_searches + other.web_searches,
         code_executions: code_executions + other.code_executions,
         tier: tier == other.tier ? tier : nil,
@@ -90,6 +105,36 @@ module Arcana::AI
         reasoning: usage["completion_tokens_details"]?.try(&.["reasoning_tokens"]?).try(&.as_i64?),
         tier: tier(service_tier, "default"),
       )
+    end
+
+    # From the `usage` of an OpenAI Images API response, which splits the
+    # input into text and image tokens. Its output is image tokens, unless
+    # `output_tokens_details` says some were text. Nil when there's no
+    # usage, or when it doesn't account for every input token (a split
+    # missing or not adding up), since those couldn't be priced exactly.
+    def self.from_openai_image(usage : JSON::Any?) : Usage?
+      return unless usage && usage.as_h?
+      details = usage["input_tokens_details"]?
+      text = count(details, "text_tokens")
+      images = count(details, "image_tokens")
+      return unless text + images == count(usage, "input_tokens")
+      output = count(usage, "output_tokens")
+      split = usage["output_tokens_details"]?
+      if split && split.as_h?
+        image_output = count(split, "image_tokens")
+        text_output = count(split, "text_tokens")
+        return unless image_output + text_output == output
+      else
+        image_output, text_output = output, 0_i64
+      end
+      new(input: text, image_input: images, output: text_output, image_output: image_output)
+    end
+
+    # From the `usage` that ends an OpenAI speech event stream: text tokens
+    # in, audio tokens out.
+    def self.from_openai_speech(usage : JSON::Any?) : Usage?
+      return unless usage && usage.as_h?
+      new(input: count(usage, "input_tokens"), audio_output: count(usage, "output_tokens"))
     end
 
     # From an Anthropic `usage` object, whose `input_tokens` leave out the

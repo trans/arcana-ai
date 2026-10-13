@@ -7,15 +7,20 @@ module Arcana::AI
     class OpenAI < Provider
       GENERATIONS_ENDPOINT = "https://api.openai.com/v1/images/generations"
       EDITS_ENDPOINT       = "https://api.openai.com/v1/images/edits"
+      # OpenAI's recommendation for the Images API. gpt-image-1, the
+      # default before arcana-ai 0.5.2, shuts down on 2026-10-23.
+      DEFAULT_MODEL = "gpt-image-2.5-sunburst"
 
       getter model : String
       getter quality : String
 
       def initialize(
         @api_key : String,
-        @model : String = "gpt-image-1",
+        @model : String = DEFAULT_MODEL,
         @quality : String = "medium",
         trace : Proc(String, Nil)? = nil,
+        @generations_endpoint : String = GENERATIONS_ENDPOINT,
+        @edits_endpoint : String = EDITS_ENDPOINT,
       )
         raise ConfigError.new("API key is required for OpenAI image generation") if @api_key.strip.empty?
         @trace = trace
@@ -40,18 +45,18 @@ module Arcana::AI
         size = "#{request.width}x#{request.height}"
         tags = request.trace_tags || {} of String => String
 
-        raw_req, raw_resp = if use_edit
+        raw_req, raw_resp, usage = if use_edit
           request_image_edit(request, size, output_path, tags)
         else
           request_image(request, size, output_path, tags)
         end
 
         Result.new(output_path, @model, "openai",
-          raw_request: raw_req, raw_response: raw_resp)
+          raw_request: raw_req, raw_response: raw_resp, usage: usage)
       end
 
       private def request_image(request : Request, size : String, output_path : String,
-                                tags : Hash(String, String)) : {String, String}
+                                tags : Hash(String, String)) : {String, String, Usage?}
         payload = {
           model:   @model,
           prompt:  request.prompt,
@@ -61,7 +66,7 @@ module Arcana::AI
         }.to_json
 
         headers = Util.bearer_headers(@api_key)
-        response = HTTP::Client.post(GENERATIONS_ENDPOINT, headers: headers, body: payload)
+        response = HTTP::Client.post(@generations_endpoint, headers: headers, body: payload)
 
         unless response.success?
           raise APIError.new(response.status_code, response.body, "openai")
@@ -72,12 +77,12 @@ module Arcana::AI
         File.write(output_path, Base64.decode(b64_data))
 
         # Strip b64 data from response log (huge) — keep metadata only
-        resp_summary = {status: response.status_code, model: @model, size: size}.to_json
-        {payload, resp_summary}
+        resp_summary = {status: response.status_code, model: @model, size: size, usage: parsed["usage"]?}.to_json
+        {payload, resp_summary, Usage.from_openai_image(parsed["usage"]?)}
       end
 
       private def request_image_edit(request : Request, size : String, output_path : String,
-                                     tags : Hash(String, String)) : {String, String}
+                                     tags : Hash(String, String)) : {String, String, Usage?}
         id = request.identity.not_nil!
 
         ref_mime = Util.mime_for(id.reference_path)
@@ -96,7 +101,7 @@ module Arcana::AI
           "Content-Type"  => mp.content_type,
         }
 
-        response = HTTP::Client.post(EDITS_ENDPOINT, headers: headers, body: mp.to_s)
+        response = HTTP::Client.post(@edits_endpoint, headers: headers, body: mp.to_s)
 
         unless response.success?
           raise APIError.new(response.status_code, response.body, "openai")
@@ -107,10 +112,10 @@ module Arcana::AI
         File.write(output_path, Base64.decode(b64_data))
 
         # Log multipart fields (not binary data) as the request
-        req_summary = {endpoint: EDITS_ENDPOINT, model: @model, prompt: request.prompt, size: size,
+        req_summary = {endpoint: @edits_endpoint, model: @model, prompt: request.prompt, size: size,
                        quality: @quality, reference: id.reference_path}.to_json
-        resp_summary = {status: response.status_code, model: @model, size: size}.to_json
-        {req_summary, resp_summary}
+        resp_summary = {status: response.status_code, model: @model, size: size, usage: parsed["usage"]?}.to_json
+        {req_summary, resp_summary, Usage.from_openai_image(parsed["usage"]?)}
       end
     end
   end

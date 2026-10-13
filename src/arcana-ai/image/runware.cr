@@ -23,6 +23,7 @@ module Arcana::AI
         @steps : Int32 = 20,
         @cfg_scale : Float64 = 14.0,
         trace : Proc(String, Nil)? = nil,
+        @endpoint : String = ENDPOINT,
       )
         raise ConfigError.new("API key is required for Runware") if @api_key.strip.empty?
         @trace = trace
@@ -68,10 +69,14 @@ module Arcana::AI
         raise Arcana::AI::Error.new("Runware returned empty data array") if data.empty?
 
         image_url = data[0]["imageURL"].as_s
-        cost = data[0]["cost"]?.try(&.as_f?)
+        model = effective_model(request)
+        # The USD Runware charged for the image (`includeCost`).
+        cost = data[0]["cost"]?.try { |c| c.as_f? || c.as_i64? }.try do |usd|
+          Pricing::Cost.reported("runware", model, BigDecimal.new(usd), "image")
+        end
 
         Util.download_file(image_url, output_path)
-        Result.new(output_path, effective_model(request), "runware", cost,
+        Result.new(output_path, model, "runware", cost,
           raw_request: payload, raw_response: response.body)
       end
 
@@ -265,7 +270,7 @@ module Arcana::AI
 
       private def post_api(payload : String) : HTTP::Client::Response
         headers = Util.bearer_headers(@api_key)
-        uri = URI.parse(ENDPOINT)
+        uri = URI.parse(@endpoint)
         client = HTTP::Client.new(uri)
         client.connect_timeout = 30.seconds
         client.read_timeout = 60.seconds
@@ -278,7 +283,7 @@ module Arcana::AI
           phase:           "api_request_image",
           event_type:      "api_request",
           provider:        "runware",
-          endpoint:        ENDPOINT,
+          endpoint:        @endpoint,
           model:           effective_model(request),
           identity_method: request.identity.try(&.method.to_s) || "none",
           control_type:    request.control.try(&.type.to_s) || "none",
@@ -293,7 +298,7 @@ module Arcana::AI
           phase:          "api_response_image",
           event_type:     "api_response",
           provider:       "runware",
-          endpoint:       ENDPOINT,
+          endpoint:       @endpoint,
           status_code:    response.status_code,
           content_type:   response.headers["Content-Type"]? || "",
           content_length: response.headers["Content-Length"]? || "",

@@ -34,7 +34,7 @@ describe Arcana::AI::Pricing do
         {"input", usd("2.2")}, {"cache_read", usd("0.11")}, {"cache_write", usd("2.75")},
         {"cache_write_1h", usd("4.4")}, {"output", usd("11")}, {"web_search", usd("10")},
       ])
-      cost.rates.should eq("arcana-ai 2026-10-12")
+      cost.rates.should eq("arcana-ai 2026-10-13")
       cost.complete?.should be_true
     end
 
@@ -123,6 +123,40 @@ describe Arcana::AI::Pricing do
     end
   end
 
+  describe "OpenAI images and speech" do
+    it "prices text and image tokens at their own rates" do
+      cost = priced("openai", "gpt-image-2.5-flare", Usage.new(input: 20, image_input: 1024, image_output: 196))
+      cost.lines.map { |l| {l.item, l.rate} }.should eq([{"input", usd("5")}, {"image_input", usd("8")}, {"image_output", usd("30")}])
+      cost.total.should eq(usd("0.014172"))
+    end
+
+    it "prices a dated image snapshot as its model" do
+      priced("openai", "gpt-image-2-2026-04-21", Usage.new(image_output: 1_000_000)).total.should eq(usd("30"))
+    end
+
+    it "won't price the image models whose cached tokens go unreported" do
+      %w(gpt-image-1 gpt-image-1-mini gpt-image-1.5 chatgpt-image-latest).each do |model|
+        reason("openai", model, Usage.new(input: 10, image_output: 10)).should eq(Pricing::Unpriced::Reason::UnknownModel)
+      end
+    end
+
+    it "won't price text output from a model that has no rate for it" do
+      reason("openai", "gpt-image-2", Usage.new(input: 10, output: 5, image_output: 10)).should eq(Pricing::Unpriced::Reason::NoRate)
+    end
+
+    it "prices speech as text in and audio out" do
+      cost = priced("openai", "gpt-4o-mini-tts-2025-12-15", Usage.new(input: 1_000_000, audio_output: 1_000_000))
+      cost.priced_as.should eq("gpt-4o-mini-tts")
+      cost.total.should eq(usd("12.60"))
+    end
+  end
+
+  it "keeps a reported cost as it was reported" do
+    cost = Pricing::Cost.reported("runware", "runware:101@1", usd("0.0038"), "image")
+    {cost.total, cost.priced_as, cost.rates, cost.complete?}.should eq({usd("0.0038"), "runware:101@1", "reported by runware", true})
+    JSON.parse(cost.to_json)["lines"][0]["unit"].should eq("images")
+  end
+
   describe "embeddings" do
     it "prices the tokens reported" do
       result = Arcana::AI::Embed::Result.new(embeddings: [[0.1]], model: "text-embedding-3-small", provider: "openai",
@@ -155,7 +189,7 @@ describe Arcana::AI::Pricing do
 
     it "takes precedence over the built-in rates" do
       priced("anthropic", "claude-sonnet-5-5", Usage.new(input: 1_000_000), table: rates).total.should eq(usd("1"))
-      priced("anthropic", "claude-opus-5-5", Usage.new(input: 1_000_000), table: rates).rates.should eq("arcana-ai 2026-10-12")
+      priced("anthropic", "claude-opus-5-5", Usage.new(input: 1_000_000), table: rates).rates.should eq("arcana-ai 2026-10-13")
     end
   end
 

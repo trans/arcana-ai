@@ -167,7 +167,7 @@ end
 Arcana::AI::Registry.register_image("openai") do |config|
   Arcana::AI::Image::OpenAI.new(
     api_key: Arcana::AI::Registry.str(config, "api_key"),
-    model: Arcana::AI::Registry.str(config, "model", "gpt-image-1"),
+    model: Arcana::AI::Registry.str(config, "model", Arcana::AI::Image::OpenAI::DEFAULT_MODEL),
     quality: Arcana::AI::Registry.str(config, "quality", "medium"),
   ).as(Arcana::AI::Image::Provider)
 end

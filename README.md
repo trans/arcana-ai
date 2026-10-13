@@ -11,8 +11,9 @@ client library, or as a dependency of arcana itself.
 
 - **Chat:** OpenAI (endpoint-configurable — also drives Grok, DeepSeek),
   Anthropic (native Messages API), Gemini (native API)
-- **Image:** OpenAI (DALL-E / gpt-image-1), Runware (FLUX)
-- **TTS:** OpenAI (gpt-4o-mini-tts), ElevenLabs
+- **Image:** OpenAI (GPT Image; gpt-image-2.5-sunburst by default), Runware (FLUX)
+- **TTS:** OpenAI (gpt-4o-mini-tts; OpenAI shuts down its speech models on
+  2027-01-06), ElevenLabs
 - **SFX:** ElevenLabs
 - **Embed:** OpenAI, Voyage (with query/document input types)
 
@@ -24,7 +25,7 @@ Add to your `shard.yml`:
 dependencies:
   arcana-ai:
     github: trans/arcana-ai
-    version: ~> 0.5.1
+    version: ~> 0.5.2
 ```
 
 Then `shards install`.
@@ -72,7 +73,9 @@ provider = Arcana::AI::Registry.create_chat("anthropic", {
 Each chat response and embedding result carries `usage`: what the call
 used, in the categories providers bill by (uncached input, cache reads,
 cache writes, output with reasoning included, web searches), the same for
-every provider. It's nil when the provider reported none, never zero.
+every provider. OpenAI image and speech results carry it too, with input
+and output images and output audio counted apart from text. It's nil when
+the provider reported none, never zero.
 
 `cost` prices it at the provider's list rates:
 
@@ -81,12 +84,21 @@ case cost = response.cost
 in Arcana::AI::Pricing::Cost
   cost.total     # => 0.0111 (BigDecimal, USD)
   cost.lines     # input, cache_read, output..., each with its rate
-  cost.rates     # => "arcana-ai 2026-10-12", the rate table used
+  cost.rates     # => "arcana-ai 2026-10-13", the rate table used
 in Arcana::AI::Pricing::Unpriced
   cost.reason    # NoUsage, UnknownModel, Tier, Region or NoRate
   cost.detail
 end
 ```
+
+Images and speech work the same way: `result.cost(at)` on an
+`Image::Result` (`at`: when the call was made) and `result.cost` on a
+`TTS::Result`. An image's cost is the provider's own figure when it
+reports one (Runware does, as `reported_cost`) and its usage at list
+rates otherwise. OpenAI's speech reports usage only for gpt-4o-mini-tts,
+which arcana-ai now asks for its audio as events; tts-1 and tts-1-hd
+calls, ElevenLabs calls, and OpenAI's older image models (whose cached
+tokens go unreported) come back `Unpriced`.
 
 A `Cost` isn't an estimate. The rates come from the providers' pricing
 pages (`src/arcana-ai/pricing/rates.yml`) and are looked up by the model
@@ -117,7 +129,9 @@ The older counts in each provider's own terms (`Chat::Response`'s
 `prompt_tokens`, `completion_tokens`, `cache_read_tokens`,
 `cache_creation_tokens` and `reasoning_tokens`, and `Embed::Result`'s
 `total_tokens`) are deprecated: the compiler warns where you use them,
-naming what replaces each. They go away in 0.6.0.
+naming what replaces each. So is `Image::Result#cost` as a `Float64`, and
+building a result with one. They go away in 0.6.0, when an image's plain
+`cost` becomes the `Cost` or `Unpriced` above.
 
 ## Development
 

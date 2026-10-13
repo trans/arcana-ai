@@ -39,9 +39,13 @@ module Arcana::AI
       getter cache_read : BigDecimal?
       getter cache_write : BigDecimal?
       getter cache_write_1h : BigDecimal?
+      getter image_input : BigDecimal?
+      getter image_output : BigDecimal?
+      getter audio_output : BigDecimal?
       getter web_search : BigDecimal?
 
-      def initialize(@input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil, @web_search = nil)
+      def initialize(@input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil,
+                     @image_input = nil, @image_output = nil, @audio_output = nil, @web_search = nil)
       end
     end
 
@@ -65,7 +69,9 @@ module Arcana::AI
       # The table these rates came from: its `version`.
       property source : String = ""
 
-      def initialize(@provider : String, @model : String, @input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil, @web_search = nil, @aliases = [] of String, @long = nil, @geo = {} of String => BigDecimal, @since = nil, @before = nil)
+      def initialize(@provider : String, @model : String, @input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil,
+                     @image_input = nil, @image_output = nil, @audio_output = nil, @web_search = nil,
+                     @aliases = [] of String, @long = nil, @geo = {} of String => BigDecimal, @since = nil, @before = nil)
       end
 
       def matches?(provider : String, model : String, at : Time) : Bool
@@ -96,7 +102,7 @@ module Arcana::AI
     class Table
       include YAML::Serializable
 
-      # Names the table and when it was checked, as "arcana-ai 2026-10-12";
+      # Names the table and its edition, as "arcana-ai 2026-10-13";
       # every `Cost` priced from it carries this.
       getter version : String
       getter providers : Hash(String, ProviderRates) = {} of String => ProviderRates
@@ -144,12 +150,14 @@ module Arcana::AI
     struct Line
       include JSON::Serializable
 
-      # "input", "cache_read", "cache_write", "cache_write_1h", "output" or "web_search".
+      # "input", "cache_read", "cache_write", "cache_write_1h", "image_input",
+      # "output", "image_output", "audio_output" or "web_search", or for a
+      # reported cost, what it was for.
       getter item : String
       getter quantity : Int64
-      # "tokens" or "searches".
+      # "tokens" or "searches", or for a reported cost, what it was for ("images").
       getter unit : String
-      # USD per million tokens, or per thousand searches.
+      # USD per million tokens, or per thousand searches; for a reported cost, its USD.
       getter rate : BigDecimal
       getter amount : BigDecimal
 
@@ -177,6 +185,13 @@ module Arcana::AI
 
       def initialize(@provider, @model, @priced_as, @lines, @rates, @excluded = [] of String)
         @total = @lines.sum(BigDecimal.new(0), &.amount)
+      end
+
+      # A cost the provider reported itself (Runware's `includeCost`, or a
+      # service that prices its own work), as one line: one `item` at
+      # `total`. Its `rates` say who reported it.
+      def self.reported(provider : String, model : String, total : BigDecimal, item : String = "call") : Cost
+        new(provider, model, model, [Line.new(item, 1_i64, "#{item}s", total, total)], "reported by #{provider}")
       end
 
       # Does the total cover every charge for the call?
@@ -239,7 +254,10 @@ module Arcana::AI
         {"cache_read", usage.cache_read, rates.cache_read},
         {"cache_write", usage.cache_write, rates.cache_write},
         {"cache_write_1h", usage.cache_write_1h, rates.cache_write_1h},
+        {"image_input", usage.image_input, rates.image_input},
         {"output", usage.output, rates.output},
+        {"image_output", usage.image_output, rates.image_output},
+        {"audio_output", usage.audio_output, rates.audio_output},
       }.each do |item, quantity, rate|
         next if quantity == 0
         return Unpriced.new(provider, model, :no_rate, "#{model} has no #{item} rate in #{table.version}") unless rate
