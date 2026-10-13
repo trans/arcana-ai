@@ -11,7 +11,14 @@ module Arcana::AI
       property raw_request : String  # full request body sent to API
       property raw_json : String     # full response body from API
 
-      # Token usage from the API response.
+      # What the call used, in the same billing categories for every
+      # provider (see `Usage`); nil when the provider reported none.
+      # `Pricing` prices it.
+      property usage : Usage?
+
+      # Token counts as the provider reported them, in its own terms:
+      # OpenAI's and Gemini's prompt_tokens include cached tokens,
+      # Anthropic's don't. `usage` evens these out.
       property prompt_tokens : Int32?
       property completion_tokens : Int32?
 
@@ -58,10 +65,10 @@ module Arcana::AI
         @thinking_content : String? = nil,
         @reasoning_tokens : Int32? = nil,
         @server_tool_results : Array(JSON::Any) = [] of JSON::Any,
+        @usage : Usage? = nil,
       )
       end
 
-      # Did the model return any tool calls?
       # This response with the retry record of the call that produced it.
       def with_retries(stats : RetryStats) : self
         copy = self
@@ -70,6 +77,7 @@ module Arcana::AI
         copy
       end
 
+      # Did the model return any tool calls?
       def has_tool_calls? : Bool
         !@tool_calls.empty?
       end
@@ -133,6 +141,7 @@ module Arcana::AI
           completion_tokens: completion_tokens,
           cache_read_tokens: cache_read_tokens,
           reasoning_tokens: reasoning_tokens,
+          usage: Usage.from_openai(usage, parsed["service_tier"]?.try(&.as_s?)),
         )
       end
     end

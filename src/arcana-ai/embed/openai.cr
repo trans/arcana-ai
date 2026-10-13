@@ -8,18 +8,19 @@ module Arcana::AI
 
       getter model : String
 
+      # The service behind the endpoint, which results carry as their
+      # `provider` and `Pricing` looks rates up by.
+      getter name : String
+
       def initialize(
         @api_key : String,
         @model : String = "text-embedding-3-small",
         @endpoint : String = ENDPOINT,
         trace : Proc(String, Nil)? = nil,
+        @name : String = "openai",
       )
         raise ConfigError.new("API key is required for OpenAI Embed") if @api_key.strip.empty?
         @trace = trace
-      end
-
-      def name : String
-        "openai"
       end
 
       def embed(request : Request) : Result
@@ -32,7 +33,7 @@ module Arcana::AI
         emit_trace({
           phase:      "api_request_embed",
           event_type: "api_request",
-          provider:   "openai",
+          provider:   name,
           endpoint:   @endpoint,
           model:      model,
           count:      request.texts.size,
@@ -49,7 +50,7 @@ module Arcana::AI
         emit_trace({
           phase:          "api_response_embed",
           event_type:     "api_response",
-          provider:       "openai",
+          provider:       name,
           endpoint:       @endpoint,
           status_code:    response.status_code,
           content_length: response.headers["Content-Length"]? || "",
@@ -83,7 +84,8 @@ module Arcana::AI
         embeddings = data.map { |d| d["embedding"].as_a.map(&.as_f) }
 
         usage = parsed["usage"]?
-        total_tokens = usage.try { |u| u["total_tokens"]?.try(&.as_i?) } || 0
+        reported = usage.try { |u| u["total_tokens"]?.try(&.as_i64?) }
+        total_tokens = reported.try(&.to_i32) || 0
 
         # Distribute total tokens evenly across inputs (API doesn't give per-text counts).
         count = embeddings.size
@@ -95,9 +97,10 @@ module Arcana::AI
           token_counts: token_counts,
           total_tokens: total_tokens,
           model: model,
-          provider: "openai",
+          provider: name,
           raw_request: payload,
           raw_response: body,
+          usage: reported.try { |n| Usage.new(input: n) },
         )
       end
     end

@@ -14,6 +14,7 @@ module Arcana::AI
         all_embeddings = [] of Array(Float64)
         all_token_counts = [] of Int32
         total_tokens = 0
+        usage : Usage? = Usage.new
         raw_requests = [] of String
         raw_responses = [] of String
         model_name = ""
@@ -32,6 +33,7 @@ module Arcana::AI
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
           total_tokens += result.total_tokens
+          usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response
           model_name = result.model
@@ -46,6 +48,7 @@ module Arcana::AI
           provider: provider_name,
           raw_request: raw_requests.join("\n---\n"),
           raw_response: raw_responses.join("\n---\n"),
+          usage: usage,
         )
       end
 
@@ -68,6 +71,7 @@ module Arcana::AI
         all_embeddings = [] of Array(Float64)
         all_token_counts = [] of Int32
         total_tokens = 0
+        usage : Usage? = Usage.new
         raw_requests = [] of String
         raw_responses = [] of String
         model_name = ""
@@ -88,6 +92,7 @@ module Arcana::AI
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
           total_tokens += result.total_tokens
+          usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response
           model_name = result.model
@@ -104,6 +109,7 @@ module Arcana::AI
           provider: provider_name,
           raw_request: raw_requests.join("\n---\n"),
           raw_response: raw_responses.join("\n---\n"),
+          usage: usage,
         )
         combined.retries = retries
         combined.retry_wait = retry_wait

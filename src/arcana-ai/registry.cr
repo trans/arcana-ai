@@ -123,6 +123,7 @@ Arcana::AI::Registry.register_chat("openai") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", "gpt-4o-mini"),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", Arcana::AI::Chat::OpenAI::ENDPOINT),
+    name: Arcana::AI::Registry.str(config, "name", "openai"),
   ).as(Arcana::AI::Chat::Provider)
 end
 
@@ -132,6 +133,7 @@ Arcana::AI::Registry.register_chat("anthropic") do |config|
     model: Arcana::AI::Registry.str(config, "model", Arcana::AI::Chat::Anthropic::DEFAULT_MODEL),
     max_tokens: Arcana::AI::Registry.int(config, "max_tokens", Arcana::AI::Chat::Anthropic::MAX_TOKENS_DEFAULT),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", Arcana::AI::Chat::Anthropic::ENDPOINT),
+    name: Arcana::AI::Registry.str(config, "name", "anthropic"),
   ).as(Arcana::AI::Chat::Provider)
 end
 
@@ -140,6 +142,7 @@ Arcana::AI::Registry.register_chat("grok") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", "grok-3"),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", "https://api.x.ai/v1/chat/completions"),
+    name: Arcana::AI::Registry.str(config, "name", "grok"),
   ).as(Arcana::AI::Chat::Provider)
 end
 
@@ -148,6 +151,7 @@ Arcana::AI::Registry.register_chat("deepseek") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", "deepseek-chat"),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", "https://api.deepseek.com/v1/chat/completions"),
+    name: Arcana::AI::Registry.str(config, "name", "deepseek"),
   ).as(Arcana::AI::Chat::Provider)
 end
 
@@ -156,6 +160,7 @@ Arcana::AI::Registry.register_chat("gemini") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", Arcana::AI::Chat::Gemini::DEFAULT_MODEL),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", Arcana::AI::Chat::Gemini::ENDPOINT),
+    name: Arcana::AI::Registry.str(config, "name", "gemini"),
   ).as(Arcana::AI::Chat::Provider)
 end
 
@@ -187,6 +192,7 @@ Arcana::AI::Registry.register_embed("openai") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", "text-embedding-3-small"),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", Arcana::AI::Embed::OpenAI::ENDPOINT),
+    name: Arcana::AI::Registry.str(config, "name", "openai"),
   ).as(Arcana::AI::Embed::Provider)
 end
 
@@ -195,6 +201,7 @@ Arcana::AI::Registry.register_embed("voyage") do |config|
     api_key: Arcana::AI::Registry.str(config, "api_key"),
     model: Arcana::AI::Registry.str(config, "model", "voyage-3"),
     endpoint: Arcana::AI::Registry.str(config, "endpoint", Arcana::AI::Embed::Voyage::ENDPOINT),
+    name: Arcana::AI::Registry.str(config, "name", "voyage"),
   ).as(Arcana::AI::Embed::Provider)
 end
 

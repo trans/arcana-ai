@@ -9,18 +9,19 @@ module Arcana::AI
 
       getter model : String
 
+      # The service behind the endpoint, which responses carry as their
+      # `provider` and `Pricing` looks rates up by.
+      getter name : String
+
       def initialize(
         @api_key : String,
         @model : String = DEFAULT_MODEL,
         @endpoint : String = ENDPOINT,
         trace : Proc(String, Nil)? = nil,
+        @name : String = "gemini",
       )
         raise ConfigError.new("API key is required for Gemini Chat") if @api_key.strip.empty?
         @trace = trace
-      end
-
-      def name : String
-        "gemini"
       end
 
       def models : Array(String)
@@ -103,6 +104,7 @@ module Arcana::AI
         finish_reason = ""
         prompt_tokens = 0
         completion_tokens = 0
+        usage_json : JSON::Any? = nil # each chunk reports the totals so far
 
         stats = RetryStats.new
         begin
@@ -123,10 +125,8 @@ module Arcana::AI
 
                 parsed = JSON.parse(data) rescue next
 
-                if candidates = parsed["candidates"]?.try(&.as_a?)
-                  candidate = candidates[0]?
-                  next unless candidate
-
+                # A chunk may carry only usage, so no candidate isn't the end.
+                if candidate = parsed["candidates"]?.try(&.as_a?).try(&.first?)
                   if fr = candidate["finishReason"]?.try(&.as_s?)
                     finish_reason = normalize_finish_reason(fr)
                   end
@@ -152,7 +152,12 @@ module Arcana::AI
                   end
                 end
 
-                if usage = parsed["usageMetadata"]?
+                if v = parsed["modelVersion"]?.try(&.as_s?)
+                  response_model = v
+                end
+
+                if (usage = parsed["usageMetadata"]?) && usage.as_h?
+                  usage_json = usage
                   prompt_tokens = usage["promptTokenCount"]?.try(&.as_i?) || prompt_tokens
                   completion_tokens = usage["candidatesTokenCount"]?.try(&.as_i?) || completion_tokens
                 end
@@ -175,11 +180,12 @@ module Arcana::AI
           tool_calls: tool_calls,
           finish_reason: finish_reason,
           model: response_model,
-          provider: "gemini",
+          provider: name,
           raw_request: payload,
           raw_json: "",
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
+          usage: Usage.from_gemini(usage_json),
         )
 
         final = final.with_retries(stats)
@@ -372,13 +378,14 @@ module Arcana::AI
           tool_calls: tool_calls,
           finish_reason: finish_reason,
           model: parsed["modelVersion"]?.try(&.as_s?) || "",
-          provider: "gemini",
+          provider: name,
           raw_request: payload,
           raw_json: body,
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
           thinking_content: thinking_content,
           reasoning_tokens: reasoning_tokens,
+          usage: Usage.from_gemini(usage),
         )
       end
 
@@ -452,7 +459,7 @@ module Arcana::AI
         emit_trace({
           phase:      "api_request_chat",
           event_type: "api_request",
-          provider:   "gemini",
+          provider:   name,
           endpoint:   @endpoint,
           model:      model,
           tags:       tags.to_json,
@@ -464,7 +471,7 @@ module Arcana::AI
         emit_trace({
           phase:          "api_response_chat",
           event_type:     "api_response",
-          provider:       "gemini",
+          provider:       name,
           endpoint:       @endpoint,
           status_code:    response.status_code,
           content_type:   response.headers["Content-Type"]? || "",

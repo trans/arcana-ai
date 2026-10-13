@@ -4,6 +4,10 @@ module Arcana::AI
       property embeddings : Array(Array(Float64))
       property token_counts : Array(Int32)
       property total_tokens : Int32
+
+      # The tokens the provider billed, as a `Usage` (all `input`); nil
+      # when it reported none. `Pricing` prices it.
+      property usage : Usage?
       property model : String
       property provider : String
       property raw_request : String
@@ -21,6 +25,7 @@ module Arcana::AI
         @provider : String = "",
         @raw_request : String = "",
         @raw_response : String = "",
+        @usage : Usage? = nil,
       )
       end
 

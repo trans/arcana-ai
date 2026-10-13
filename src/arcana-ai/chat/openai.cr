@@ -8,18 +8,20 @@ module Arcana::AI
 
       getter model : String
 
+      # The service behind the endpoint: "openai", or for an OpenAI-
+      # compatible service, its own name ("grok", "deepseek"). Responses
+      # carry it as their `provider`, and `Pricing` looks rates up by it.
+      getter name : String
+
       def initialize(
         @api_key : String,
         @model : String = "gpt-4o-mini",
         @endpoint : String = ENDPOINT,
         trace : Proc(String, Nil)? = nil,
+        @name : String = "openai",
       )
         raise ConfigError.new("API key is required for OpenAI Chat") if @api_key.strip.empty?
         @trace = trace
-      end
-
-      def name : String
-        "openai"
       end
 
       def models : Array(String)
@@ -48,7 +50,7 @@ module Arcana::AI
           r
         end
 
-        result = Response.from_openai_json(response.body, provider: "openai")
+        result = Response.from_openai_json(response.body, provider: name)
         result.raw_request = payload
         result.with_retries(stats)
       end
@@ -84,6 +86,8 @@ module Arcana::AI
         prompt_tokens = 0
         completion_tokens = 0
         cached_tokens : Int32? = nil
+        usage_json : JSON::Any? = nil
+        service_tier : String? = nil
 
         stats = RetryStats.new
         begin
@@ -107,11 +111,13 @@ module Arcana::AI
                 if m = parsed["model"]?.try(&.as_s?)
                   response_model = m
                 end
+                if t = parsed["service_tier"]?.try(&.as_s?)
+                  service_tier = t
+                end
 
-                if choices = parsed["choices"]?.try(&.as_a?)
-                  choice = choices[0]?
-                  next unless choice
-
+                # The last chunk carries the usage with no choices, so it
+                # mustn't end the iteration early.
+                if choice = parsed["choices"]?.try(&.as_a?).try(&.first?)
                   if fr = choice["finish_reason"]?.try(&.as_s?)
                     finish_reason = fr
                   end
@@ -142,7 +148,8 @@ module Arcana::AI
                   end
                 end
 
-                if usage = parsed["usage"]?
+                if (usage = parsed["usage"]?) && usage.as_h?
+                  usage_json = usage
                   prompt_tokens = usage["prompt_tokens"]?.try(&.as_i?) || prompt_tokens
                   completion_tokens = usage["completion_tokens"]?.try(&.as_i?) || completion_tokens
                   cached_tokens = usage["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?) || cached_tokens
@@ -179,12 +186,13 @@ module Arcana::AI
           tool_calls: tool_calls,
           finish_reason: finish_reason,
           model: response_model,
-          provider: "openai",
+          provider: name,
           raw_request: payload,
           raw_json: "",
           prompt_tokens: prompt_tokens,
           completion_tokens: completion_tokens,
           cache_read_tokens: cached_tokens,
+          usage: Usage.from_openai(usage_json, service_tier),
         )
 
         final = final.with_retries(stats)
@@ -206,7 +214,7 @@ module Arcana::AI
           r
         end
 
-        result = Response.from_openai_json(response.body, provider: "openai")
+        result = Response.from_openai_json(response.body, provider: name)
         result.raw_request = payload
         result.with_retries(stats)
       end
@@ -303,7 +311,7 @@ module Arcana::AI
         emit_trace({
           phase:      "api_request_chat",
           event_type: "api_request",
-          provider:   "openai",
+          provider:   name,
           endpoint:   @endpoint,
           model:      model,
           tags:       tags.to_json,
@@ -315,7 +323,7 @@ module Arcana::AI
         emit_trace({
           phase:          "api_response_chat",
           event_type:     "api_response",
-          provider:       "openai",
+          provider:       name,
           endpoint:       @endpoint,
           status_code:    response.status_code,
           content_type:   response.headers["Content-Type"]? || "",

@@ -4,6 +4,7 @@ require "./arcana-ai/trace"
 require "./arcana-ai/error"
 require "./arcana-ai/context"
 require "./arcana-ai/retry"
+require "./arcana-ai/usage"
 require "./arcana-ai/util/hash"
 require "./arcana-ai/util/http"
 require "./arcana-ai/util/multipart"
@@ -41,6 +42,7 @@ require "./arcana-ai/embed/provider"
 require "./arcana-ai/embed/openai"
 require "./arcana-ai/embed/voyage"
 require "./arcana-ai/registry"
+require "./arcana-ai/pricing"
 
 module Arcana
   module AI

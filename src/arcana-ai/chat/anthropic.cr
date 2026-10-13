@@ -6,10 +6,14 @@ module Arcana::AI
     class Anthropic < Provider
       ENDPOINT        = "https://api.anthropic.com/v1/messages"
       API_VERSION     = "2023-06-01"
-      DEFAULT_MODEL   = "claude-sonnet-4-20250514"
+      DEFAULT_MODEL   = "claude-sonnet-5-5"
       MAX_TOKENS_DEFAULT = 4096
 
       getter model : String
+
+      # The service behind the endpoint, which responses carry as their
+      # `provider` and `Pricing` looks rates up by.
+      getter name : String
 
       def initialize(
         @api_key : String,
@@ -17,13 +21,10 @@ module Arcana::AI
         @max_tokens : Int32 = MAX_TOKENS_DEFAULT,
         @endpoint : String = ENDPOINT,
         trace : Proc(String, Nil)? = nil,
+        @name : String = "anthropic",
       )
         raise ConfigError.new("API key is required for Anthropic Chat") if @api_key.strip.empty?
         @trace = trace
-      end
-
-      def name : String
-        "anthropic"
       end
 
       def models : Array(String)
@@ -51,7 +52,7 @@ module Arcana::AI
         emit_trace({
           phase:      "api_request_chat",
           event_type: "api_request",
-          provider:   "anthropic",
+          provider:   name,
           endpoint:   @endpoint,
           model:      model,
           tags:       tags.to_json,
@@ -62,7 +63,7 @@ module Arcana::AI
           emit_trace({
             phase:          "api_response_chat",
             event_type:     "api_response",
-            provider:       "anthropic",
+            provider:       name,
             endpoint:       @endpoint,
             status_code:    r.status_code,
             content_type:   r.headers["Content-Type"]? || "",
@@ -87,7 +88,7 @@ module Arcana::AI
         emit_trace({
           phase:      "api_request_chat",
           event_type: "api_request",
-          provider:   "anthropic",
+          provider:   name,
           endpoint:   @endpoint,
           model:      model,
           tags:       tags.to_json,
@@ -98,7 +99,7 @@ module Arcana::AI
           emit_trace({
             phase:          "api_response_chat",
             event_type:     "api_response",
-            provider:       "anthropic",
+            provider:       name,
             endpoint:       @endpoint,
             status_code:    r.status_code,
             content_type:   r.headers["Content-Type"]? || "",
@@ -156,6 +157,9 @@ module Arcana::AI
         completion_tokens = 0
         cache_read_tokens : Int32? = nil
         cache_creation_tokens : Int32? = nil
+        # message_start reports the input side and message_delta the
+        # running totals; later fields win.
+        usage_fields : Hash(String, JSON::Any)? = nil
 
         stats = RetryStats.new
         begin
@@ -183,7 +187,8 @@ module Arcana::AI
                   when "message_start"
                     if msg = parsed["message"]?
                       response_model = msg["model"]?.try(&.as_s?) || ""
-                      if usage = msg["usage"]?
+                      if (usage = msg["usage"]?) && (fields = usage.as_h?)
+                        usage_fields = fields.dup
                         prompt_tokens = usage["input_tokens"]?.try(&.as_i?) || 0
                         cache_read_tokens = usage["cache_read_input_tokens"]?.try(&.as_i?)
                         cache_creation_tokens = usage["cache_creation_input_tokens"]?.try(&.as_i?)
@@ -247,7 +252,9 @@ module Arcana::AI
                                       else                   stop_reason || ""
                                       end
                     end
-                    if usage = parsed["usage"]?
+                    if (usage = parsed["usage"]?) && (fields = usage.as_h?)
+                      merged = usage_fields ||= {} of String => JSON::Any
+                      fields.each { |k, v| merged[k] = v unless v.raw.nil? }
                       completion_tokens = usage["output_tokens"]?.try(&.as_i?) || 0
                     end
                   end
@@ -271,7 +278,7 @@ module Arcana::AI
           tool_calls: tool_calls,
           finish_reason: finish_reason,
           model: response_model,
-          provider: "anthropic",
+          provider: name,
           raw_request: payload,
           raw_json: "",
           prompt_tokens: prompt_tokens,
@@ -279,6 +286,7 @@ module Arcana::AI
           cache_read_tokens: cache_read_tokens,
           cache_creation_tokens: cache_creation_tokens,
           server_tool_results: server_tool_results,
+          usage: usage_fields.try { |f| Usage.from_anthropic(JSON::Any.new(f)) },
         )
 
         final = final.with_retries(stats)
@@ -559,7 +567,7 @@ module Arcana::AI
           tool_calls: tool_calls,
           finish_reason: finish_reason,
           model: model,
-          provider: "anthropic",
+          provider: name,
           raw_request: payload,
           raw_json: body,
           prompt_tokens: prompt_tokens,
@@ -568,6 +576,7 @@ module Arcana::AI
           cache_creation_tokens: cache_creation_tokens,
           thinking_content: thinking_content,
           server_tool_results: server_tool_results,
+          usage: Usage.from_anthropic(usage),
         )
       end
     end
