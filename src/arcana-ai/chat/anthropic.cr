@@ -153,10 +153,6 @@ module Arcana::AI
         in_tool = false
         response_model = ""
         finish_reason = ""
-        prompt_tokens = 0
-        completion_tokens = 0
-        cache_read_tokens : Int32? = nil
-        cache_creation_tokens : Int32? = nil
         # message_start reports the input side and message_delta the
         # running totals; later fields win.
         usage_fields : Hash(String, JSON::Any)? = nil
@@ -189,9 +185,6 @@ module Arcana::AI
                       response_model = msg["model"]?.try(&.as_s?) || ""
                       if (usage = msg["usage"]?) && (fields = usage.as_h?)
                         usage_fields = fields.dup
-                        prompt_tokens = usage["input_tokens"]?.try(&.as_i?) || 0
-                        cache_read_tokens = usage["cache_read_input_tokens"]?.try(&.as_i?)
-                        cache_creation_tokens = usage["cache_creation_input_tokens"]?.try(&.as_i?)
                       end
                     end
 
@@ -255,7 +248,6 @@ module Arcana::AI
                     if (usage = parsed["usage"]?) && (fields = usage.as_h?)
                       merged = usage_fields ||= {} of String => JSON::Any
                       fields.each { |k, v| merged[k] = v unless v.raw.nil? }
-                      completion_tokens = usage["output_tokens"]?.try(&.as_i?) || 0
                     end
                   end
                 end
@@ -281,10 +273,6 @@ module Arcana::AI
           provider: name,
           raw_request: payload,
           raw_json: "",
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
-          cache_read_tokens: cache_read_tokens,
-          cache_creation_tokens: cache_creation_tokens,
           server_tool_results: server_tool_results,
           usage: usage_fields.try { |f| Usage.from_anthropic(JSON::Any.new(f)) },
         )
@@ -557,10 +545,6 @@ module Arcana::AI
 
         model = parsed["model"]?.try(&.as_s?) || ""
         usage = parsed["usage"]?
-        prompt_tokens = usage.try { |u| u["input_tokens"]?.try(&.as_i?) }
-        completion_tokens = usage.try { |u| u["output_tokens"]?.try(&.as_i?) }
-        cache_read_tokens = usage.try { |u| u["cache_read_input_tokens"]?.try(&.as_i?) }
-        cache_creation_tokens = usage.try { |u| u["cache_creation_input_tokens"]?.try(&.as_i?) }
 
         Response.new(
           content: content,
@@ -570,10 +554,6 @@ module Arcana::AI
           provider: name,
           raw_request: payload,
           raw_json: body,
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
-          cache_read_tokens: cache_read_tokens,
-          cache_creation_tokens: cache_creation_tokens,
           thinking_content: thinking_content,
           server_tool_results: server_tool_results,
           usage: Usage.from_anthropic(usage),

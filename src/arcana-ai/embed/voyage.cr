@@ -98,7 +98,6 @@ module Arcana::AI
         Result.new(
           embeddings: embeddings,
           token_counts: token_counts,
-          total_tokens: total_tokens,
           model: model,
           provider: name,
           raw_request: payload,

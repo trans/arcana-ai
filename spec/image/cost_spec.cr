@@ -78,13 +78,13 @@ describe "image costs" do
 
   it "won't price an image that came with neither usage nor a cost" do
     result = Arcana::AI::Image::Result.new("x.png", "gpt-image-2", "openai")
-    result.cost(Time.utc).as(Pricing::Unpriced).reason.should eq(Pricing::Unpriced::Reason::NoUsage)
+    result.cost.as(Pricing::Unpriced).reason.should eq(Pricing::Unpriced::Reason::NoUsage)
   end
 
   it "carries a cost a service reported" do
     cost = Pricing::Cost.reported("mj:camera", "nano-banana", BigDecimal.new("0.039"), "image")
     result = Arcana::AI::Image::Result.new("x.png", "nano-banana", "mj:camera", cost)
     result.reported_cost.should eq(cost)
-    result.cost(Time.utc).as(Pricing::Cost).total.should eq(BigDecimal.new("0.039"))
+    result.cost.as(Pricing::Cost).total.should eq(BigDecimal.new("0.039"))
   end
 end

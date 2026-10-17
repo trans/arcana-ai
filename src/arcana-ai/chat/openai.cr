@@ -83,9 +83,6 @@ module Arcana::AI
         tool_calls_map = {} of Int32 => {id: String, name: String, arguments: String::Builder}
         response_model = ""
         finish_reason = ""
-        prompt_tokens = 0
-        completion_tokens = 0
-        cached_tokens : Int32? = nil
         usage_json : JSON::Any? = nil
         service_tier : String? = nil
 
@@ -150,9 +147,6 @@ module Arcana::AI
 
                 if (usage = parsed["usage"]?) && usage.as_h?
                   usage_json = usage
-                  prompt_tokens = usage["prompt_tokens"]?.try(&.as_i?) || prompt_tokens
-                  completion_tokens = usage["completion_tokens"]?.try(&.as_i?) || completion_tokens
-                  cached_tokens = usage["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?) || cached_tokens
                 end
               end
             end
@@ -189,9 +183,6 @@ module Arcana::AI
           provider: name,
           raw_request: payload,
           raw_json: "",
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
-          cache_read_tokens: cached_tokens,
           usage: Usage.from_openai(usage_json, service_tier),
         )
 

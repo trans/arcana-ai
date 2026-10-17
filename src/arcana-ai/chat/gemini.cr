@@ -102,8 +102,6 @@ module Arcana::AI
         tool_calls = [] of ToolCall
         response_model = model
         finish_reason = ""
-        prompt_tokens = 0
-        completion_tokens = 0
         usage_json : JSON::Any? = nil # each chunk reports the totals so far
 
         stats = RetryStats.new
@@ -158,8 +156,6 @@ module Arcana::AI
 
                 if (usage = parsed["usageMetadata"]?) && usage.as_h?
                   usage_json = usage
-                  prompt_tokens = usage["promptTokenCount"]?.try(&.as_i?) || prompt_tokens
-                  completion_tokens = usage["candidatesTokenCount"]?.try(&.as_i?) || completion_tokens
                 end
               end
             end
@@ -183,8 +179,6 @@ module Arcana::AI
           provider: name,
           raw_request: payload,
           raw_json: "",
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
           usage: Usage.from_gemini(usage_json),
         )
 
@@ -366,10 +360,6 @@ module Arcana::AI
         finish_reason ||= ""
 
         usage = parsed["usageMetadata"]?
-        prompt_tokens = usage.try { |u| u["promptTokenCount"]?.try(&.as_i?) }
-        completion_tokens = usage.try { |u| u["candidatesTokenCount"]?.try(&.as_i?) }
-        # Gemini reports thoughts token count separately when thinking ran.
-        reasoning_tokens = usage.try { |u| u["thoughtsTokenCount"]?.try(&.as_i?) }
 
         thinking_content = thinking_parts.empty? ? nil : thinking_parts.join("\n\n")
 
@@ -381,10 +371,7 @@ module Arcana::AI
           provider: name,
           raw_request: payload,
           raw_json: body,
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
           thinking_content: thinking_content,
-          reasoning_tokens: reasoning_tokens,
           usage: Usage.from_gemini(usage),
         )
       end

@@ -22,30 +22,6 @@ module Arcana::AI
       # even when reasoning ran.
       property thinking_content : String?
 
-      # Deprecated token counts, as each provider reported them in its own
-      # terms (OpenAI's and Gemini's prompt_tokens include cached tokens,
-      # Anthropic's don't; Gemini's completion_tokens leave out thinking).
-      # `usage` has them in the same terms for every provider. They go
-      # away in arcana-ai 0.6.0.
-      {% for field in [
-                        {"prompt_tokens", "`usage.prompt` (the whole prompt) or `usage.input` (uncached input)"},
-                        {"completion_tokens", "`usage.output` (reasoning included)"},
-                        {"cache_read_tokens", "`usage.cache_read`"},
-                        {"cache_creation_tokens", "`usage.cache_write` + `usage.cache_write_1h`"},
-                        {"reasoning_tokens", "`usage.reasoning`"},
-                      ] %}
-        @{{field[0].id}} : Int32?
-
-        @[Deprecated("Use {{field[1].id}}, the same for every provider, and `cost` for what the call cost. Removed in arcana-ai 0.6.0.")]
-        def {{field[0].id}} : Int32?
-          @{{field[0].id}}
-        end
-
-        @[Deprecated("Set `usage`. Removed in arcana-ai 0.6.0.")]
-        def {{field[0].id}}=(@{{field[0].id}} : Int32?)
-        end
-      {% end %}
-
       # Server-side tool results (e.g. web_search results).
       property server_tool_results : Array(JSON::Any)
 
@@ -62,12 +38,7 @@ module Arcana::AI
         @provider : String = "",
         @raw_request : String = "",
         @raw_json : String = "",
-        @prompt_tokens : Int32? = nil,
-        @completion_tokens : Int32? = nil,
-        @cache_read_tokens : Int32? = nil,
-        @cache_creation_tokens : Int32? = nil,
         @thinking_content : String? = nil,
-        @reasoning_tokens : Int32? = nil,
         @server_tool_results : Array(JSON::Any) = [] of JSON::Any,
         @usage : Usage? = nil,
       )
@@ -123,17 +94,6 @@ module Arcana::AI
         end
 
         usage = parsed["usage"]?
-        prompt_tokens = usage.try { |u| u["prompt_tokens"]?.try(&.as_i?) }
-        completion_tokens = usage.try { |u| u["completion_tokens"]?.try(&.as_i?) }
-        # `usage.completion_tokens_details.reasoning_tokens` for o-series.
-        reasoning_tokens = usage.try do |u|
-          u["completion_tokens_details"]?.try(&.["reasoning_tokens"]?).try(&.as_i?)
-        end
-        # Prompt caching: the cached part of prompt_tokens
-        cache_read_tokens = usage.try do |u|
-          u["prompt_tokens_details"]?.try(&.["cached_tokens"]?).try(&.as_i?)
-        end
-
         new(
           content: content,
           tool_calls: tool_calls,
@@ -141,10 +101,6 @@ module Arcana::AI
           model: model,
           provider: provider,
           raw_json: raw,
-          prompt_tokens: prompt_tokens,
-          completion_tokens: completion_tokens,
-          cache_read_tokens: cache_read_tokens,
-          reasoning_tokens: reasoning_tokens,
           usage: Usage.from_openai(usage, parsed["service_tier"]?.try(&.as_s?)),
         )
       end

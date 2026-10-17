@@ -23,7 +23,7 @@ class FakeEmbedProvider < Arcana::AI::Embed::Provider
     Arcana::AI::Embed::Result.new(
       embeddings: request.texts.map { |_| Array.new(dims, 0.1) },
       token_counts: Array.new(n, 5),
-      total_tokens: n * 5,
+      usage: Arcana::AI::Usage.new(input: n * 5_i64),
       model: request.model.empty? ? "fake-model" : request.model,
       provider: "fake",
       raw_request: request.texts.join(","),
@@ -41,7 +41,7 @@ describe Arcana::AI::Embed::Provider do
 
       p.call_count.should eq(1)
       result.embeddings.size.should eq(3)
-      result.@total_tokens.should eq(15)
+      result.usage.not_nil!.input.should eq(15)
     end
 
     it "splits into batches and aggregates" do
@@ -53,7 +53,7 @@ describe Arcana::AI::Embed::Provider do
       p.call_count.should eq(4) # 3+3+3+1
       result.embeddings.size.should eq(10)
       result.token_counts.size.should eq(10)
-      result.@total_tokens.should eq(50)
+      result.usage.not_nil!.input.should eq(50)
     end
   end
 
@@ -121,7 +121,7 @@ describe Arcana::AI::Embed::Provider do
       result = p.batch_embed_with_retry(req, batch_size: 2, max_retries: 2)
 
       result.embeddings.size.should eq(5)
-      result.@total_tokens.should eq(25)
+      result.usage.not_nil!.input.should eq(25)
     end
   end
 

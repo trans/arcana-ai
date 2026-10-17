@@ -13,7 +13,6 @@ module Arcana::AI
 
         all_embeddings = [] of Array(Float64)
         all_token_counts = [] of Int32
-        total_tokens = 0
         usage : Usage? = Usage.new
         raw_requests = [] of String
         raw_responses = [] of String
@@ -32,7 +31,6 @@ module Arcana::AI
 
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
-          total_tokens += result.@total_tokens # deprecated; goes in 0.6.0
           usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response
@@ -43,7 +41,6 @@ module Arcana::AI
         Result.new(
           embeddings: all_embeddings,
           token_counts: all_token_counts,
-          total_tokens: total_tokens,
           model: model_name,
           provider: provider_name,
           raw_request: raw_requests.join("\n---\n"),
@@ -70,7 +67,6 @@ module Arcana::AI
 
         all_embeddings = [] of Array(Float64)
         all_token_counts = [] of Int32
-        total_tokens = 0
         usage : Usage? = Usage.new
         raw_requests = [] of String
         raw_responses = [] of String
@@ -91,7 +87,6 @@ module Arcana::AI
 
           all_embeddings.concat(result.embeddings)
           all_token_counts.concat(result.token_counts)
-          total_tokens += result.@total_tokens # deprecated; goes in 0.6.0
           usage = (u = usage) && (r = result.usage) ? u + r : nil
           raw_requests << result.raw_request
           raw_responses << result.raw_response
@@ -104,7 +99,6 @@ module Arcana::AI
         combined = Result.new(
           embeddings: all_embeddings,
           token_counts: all_token_counts,
-          total_tokens: total_tokens,
           model: model_name,
           provider: provider_name,
           raw_request: raw_requests.join("\n---\n"),

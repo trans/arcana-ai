@@ -17,8 +17,7 @@ describe Arcana::AI::Chat::Response do
       resp.content.should eq("Hello!")
       resp.finish_reason.should eq("stop")
       resp.model.should eq("gpt-4o-mini")
-      resp.@prompt_tokens.should eq(10)
-      resp.@completion_tokens.should eq(5)
+      {resp.usage.not_nil!.input, resp.usage.not_nil!.output}.should eq({10, 5})
       resp.has_tool_calls?.should be_false
       resp.raw_json.should eq(raw)
     end
@@ -93,7 +92,7 @@ describe Arcana::AI::Chat::Response do
       resp.provider.should eq("custom")
     end
 
-    it "extracts reasoning_tokens from completion_tokens_details (o-series)" do
+    it "takes the reasoning tokens from completion_tokens_details (o-series)" do
       raw = %({
         "choices": [{"message": {"content": "42"}, "finish_reason": "stop"}],
         "model": "o3-mini",
@@ -104,25 +103,23 @@ describe Arcana::AI::Chat::Response do
         }
       })
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.@reasoning_tokens.should eq(87)
-      resp.@completion_tokens.should eq(100)
+      {resp.usage.not_nil!.reasoning, resp.usage.not_nil!.output}.should eq({87, 100})
     end
 
-    it "leaves reasoning_tokens nil when the response doesn't include it" do
+    it "leaves the reasoning tokens nil when the response doesn't include them" do
       raw = %({
         "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 5, "completion_tokens": 3}
       })
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.@reasoning_tokens.should be_nil
+      resp.usage.not_nil!.reasoning.should be_nil
     end
 
-    it "reads OpenAI's cached prompt tokens as cache_read_tokens" do
+    it "reads OpenAI's cached prompt tokens as cache reads, apart from input" do
       raw = %({"model":"gpt-4o-mini","choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
         "usage":{"prompt_tokens":2048,"completion_tokens":12,"prompt_tokens_details":{"cached_tokens":1920}}})
       resp = Arcana::AI::Chat::Response.from_openai_json(raw)
-      resp.@prompt_tokens.should eq(2048)
-      resp.@cache_read_tokens.should eq(1920)
+      {resp.usage.not_nil!.input, resp.usage.not_nil!.cache_read, resp.usage.not_nil!.prompt}.should eq({128, 1920, 2048})
     end
   end
 end

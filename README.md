@@ -91,9 +91,9 @@ in Arcana::AI::Pricing::Unpriced
 end
 ```
 
-Images and speech work the same way: `result.cost(at)` on an
-`Image::Result` (`at`: when the call was made) and `result.cost` on a
-`TTS::Result`. An image's cost is the provider's own figure when it
+Images and speech work the same way: `result.cost` on an `Image::Result`
+or a `TTS::Result`, with `at` (when the call was made) for a stored one,
+as for chat. An image's cost is the provider's own figure when it
 reports one (Runware does, as `reported_cost`) and its usage at list
 rates otherwise. OpenAI's speech reports usage only for gpt-4o-mini-tts,
 which arcana-ai now asks for its audio as events; tts-1 and tts-1-hd
@@ -130,14 +130,6 @@ rates = Arcana::AI::Pricing::Table.default.merge(Arcana::AI::Pricing::Table.from
 response.cost(table: rates)
 Arcana::AI::Pricing.cost(provider, model, usage, at: logged_at, table: rates) # price a stored call
 ```
-
-The older counts in each provider's own terms (`Chat::Response`'s
-`prompt_tokens`, `completion_tokens`, `cache_read_tokens`,
-`cache_creation_tokens` and `reasoning_tokens`, and `Embed::Result`'s
-`total_tokens`) are deprecated: the compiler warns where you use them,
-naming what replaces each. So is `Image::Result#cost` as a `Float64`, and
-building a result with one. They go away in 0.6.0, when an image's plain
-`cost` becomes the `Cost` or `Unpriced` above.
 
 ## Development
 
