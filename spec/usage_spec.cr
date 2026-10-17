@@ -233,8 +233,8 @@ describe Arcana::AI::Usage do
   end
 
   describe "from ElevenLabs" do
-    it "is the credits in the character-cost header" do
-      Arcana::AI::Usage.from_elevenlabs(" 12 ").not_nil!.credits.should eq(12)
+    it "is the characters billed, from the character-cost header" do
+      Arcana::AI::Usage.from_elevenlabs(" 12 ").not_nil!.characters.should eq(12)
     end
 
     it "is nil when the header is missing or not a whole number" do
@@ -265,14 +265,14 @@ describe Arcana::AI::Usage do
 
   it "loads stored usage that lacks a category added since, as zero" do
     u = Arcana::AI::Usage.from_json(%({"input": 1, "output": 2}))
-    {u.input, u.output, u.audio_output, u.credits, u.reasoning}.should eq({1, 2, 0, 0, nil})
-    Arcana::AI::Usage.from_json(Arcana::AI::Usage.new(input: 3, credits: 12).to_json).credits.should eq(12)
+    {u.input, u.output, u.audio_output, u.characters, u.reasoning}.should eq({1, 2, 0, 0, nil})
+    Arcana::AI::Usage.from_json(Arcana::AI::Usage.new(input: 3, characters: 12).to_json).characters.should eq(12)
   end
 
   it "adds up, keeping a tier both share" do
     a = Arcana::AI::Usage.new(input: 5, output: 2, tier: "standard")
-    b = Arcana::AI::Usage.new(input: 7, cache_read: 3, tier: "standard", reasoning: 1, image_output: 4, credits: 6)
+    b = Arcana::AI::Usage.new(input: 7, cache_read: 3, tier: "standard", reasoning: 1, image_output: 4, characters: 6)
     sum = a + b
-    {sum.input, sum.output, sum.cache_read, sum.reasoning, sum.image_output, sum.credits, sum.tier}.should eq({12, 2, 3, 1, 4, 6, "standard"})
+    {sum.input, sum.output, sum.cache_read, sum.reasoning, sum.image_output, sum.characters, sum.tier}.should eq({12, 2, 3, 1, 4, 6, "standard"})
   end
 end

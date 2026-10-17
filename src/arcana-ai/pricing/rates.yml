@@ -6,9 +6,11 @@
 #   openai     https://developers.openai.com/api/docs/pricing
 #   gemini     https://ai.google.dev/gemini-api/docs/pricing (paid tier)
 #   voyage     https://docs.voyageai.com/docs/pricing
+#   elevenlabs https://elevenlabs.io/pricing/api
 #
 # Token rates are per million tokens; web_search is per thousand searches,
-# and credits per thousand credits, for providers that bill in credits.
+# and characters per thousand characters billed, for speech billed by the
+# character.
 # cache_write is the provider's standard cache-write rate (Anthropic's
 # 5-minute writes, OpenAI's writes); cache_write_1h is Anthropic's 1-hour
 # writes. image_input, image_output and audio_output are for models that
@@ -23,18 +25,11 @@
 #   before:  the day (UTC) they stop applying
 #   aliases: other IDs for the same model
 #
-# ElevenLabs isn't listed. It bills speech in credits, which its responses
-# report (`usage.credits`), and what a credit costs depends on the plan.
-# Its price page gives rates per character, but some models are charged
-# less than a credit a character (eleven_v3 0.4, 2026-10-17), so those
-# rates would overstate them. Give your plan's `credits` rate in a table
-# of your own.
-#
 # Under `providers`, `web_search` applies to all of a provider's models,
 # and `dated_snapshots` prices an ID ending in -YYYY-MM-DD as the model
 # before it, unless that ID is listed itself.
 
-version: arcana-ai 2026-10-13
+version: arcana-ai 2026-10-17
 
 providers:
   anthropic:
@@ -75,7 +70,8 @@ models:
   - {provider: anthropic, model: claude-haiku-4-5-20251001, aliases: [claude-haiku-4-5], input: 1, cache_write: 1.25, cache_write_1h: 2, cache_read: 0.10, output: 5}
   - {provider: anthropic, model: claude-3-5-haiku-20241022, aliases: [claude-3-5-haiku-latest], input: 0.80, cache_write: 1, cache_write_1h: 1.60, cache_read: 0.08, output: 4}
 
-  # -- OpenAI: standard tier; chat and embeddings checked 2026-10-12.
+  # -- OpenAI: standard tier; chat and embeddings checked 2026-10-12,
+  # images and speech 2026-10-13.
   # Long context is over 272K input tokens.
 
   - {provider: openai, model: gpt-6-astra, input: 10, cache_read: 1, cache_write: 12.50, output: 50, long: {above: 272000, input: 20, cache_read: 2, cache_write: 25, output: 75}}
@@ -159,3 +155,21 @@ models:
   - {provider: voyage, model: voyage-3.5-lite, input: 0.02}
   - {provider: voyage, model: voyage-3, input: 0.06}
   - {provider: voyage, model: voyage-3-lite, input: 0.02}
+
+  # -- ElevenLabs: text to speech through the API, checked 2026-10-17.
+  # API usage is billed in dollars by the character, at the same rates on
+  # every plan; a plan's fee buys characters at these rates. A call is
+  # priced by the characters ElevenLabs reports billing (its
+  # `character-cost` header), which can be fewer than the text has:
+  # eleven_v3 billed 12 for a 30-character line (2026-10-17). The turbo
+  # models are deprecated for the Flash ones, at the Flash rate.
+
+  - {provider: elevenlabs, model: eleven_v4, characters: 0.08}
+  - {provider: elevenlabs, model: eleven_v4_turbo, characters: 0.04}
+  - {provider: elevenlabs, model: eleven_v3, characters: 0.08}
+  - {provider: elevenlabs, model: eleven_v3_conversational, characters: 0.04}
+  - {provider: elevenlabs, model: eleven_multilingual_v2, characters: 0.08}
+  - {provider: elevenlabs, model: eleven_flash_v2_5, characters: 0.04}
+  - {provider: elevenlabs, model: eleven_flash_v2, characters: 0.04}
+  - {provider: elevenlabs, model: eleven_turbo_v2_5, characters: 0.04}
+  - {provider: elevenlabs, model: eleven_turbo_v2, characters: 0.04}

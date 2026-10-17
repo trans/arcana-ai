@@ -34,7 +34,7 @@ describe Arcana::AI::Pricing do
         {"input", usd("2.2")}, {"cache_read", usd("0.11")}, {"cache_write", usd("2.75")},
         {"cache_write_1h", usd("4.4")}, {"output", usd("11")}, {"web_search", usd("10")},
       ])
-      cost.rates.should eq("arcana-ai 2026-10-13")
+      cost.rates.should eq("arcana-ai 2026-10-17")
       cost.complete?.should be_true
     end
 
@@ -151,26 +151,20 @@ describe Arcana::AI::Pricing do
     end
   end
 
-  describe "credits" do
-    mine = Pricing::Table.default.merge(Pricing::Table.from_yaml(<<-YAML))
-      version: mj 2026-10-17
-      models:
-        - {provider: elevenlabs, model: eleven_v3, credits: 0.10}
-        - {provider: elevenlabs, model: eleven_flash_v2_5, input: 1}
-      YAML
-
-    it "prices credits per thousand, at a rate from a table of your own" do
-      cost = priced("elevenlabs", "eleven_v3", Usage.new(credits: 12), table: mine)
-      cost.total.should eq(usd("0.0012"))
-      cost.lines.map { |l| {l.item, l.quantity, l.unit} }.should eq([{"credits", 12, "credits"}])
+  describe "ElevenLabs" do
+    it "prices the characters billed, per thousand" do
+      cost = priced("elevenlabs", "eleven_v3", Usage.new(characters: 12))
+      cost.total.should eq(usd("0.00096"))
+      cost.lines.map { |l| {l.item, l.quantity, l.unit} }.should eq([{"characters", 12, "characters"}])
+      priced("elevenlabs", "eleven_flash_v2_5", Usage.new(characters: 1000)).total.should eq(usd("0.04"))
     end
 
-    it "has no built-in ElevenLabs rates, since a credit's price depends on the plan" do
-      reason("elevenlabs", "eleven_v3", Usage.new(credits: 12)).should eq(Pricing::Unpriced::Reason::UnknownModel)
+    it "won't price a model the price page doesn't list" do
+      reason("elevenlabs", "eleven_monolingual_v1", Usage.new(characters: 12)).should eq(Pricing::Unpriced::Reason::UnknownModel)
     end
 
-    it "won't price credits for a model with no credits rate" do
-      reason("elevenlabs", "eleven_flash_v2_5", Usage.new(credits: 12), table: mine).should eq(Pricing::Unpriced::Reason::NoRate)
+    it "won't price characters for a model with no characters rate" do
+      reason("openai", "gpt-4o-mini-tts", Usage.new(characters: 12)).should eq(Pricing::Unpriced::Reason::NoRate)
     end
   end
 
@@ -212,7 +206,7 @@ describe Arcana::AI::Pricing do
 
     it "takes precedence over the built-in rates" do
       priced("anthropic", "claude-sonnet-5-5", Usage.new(input: 1_000_000), table: rates).total.should eq(usd("1"))
-      priced("anthropic", "claude-opus-5-5", Usage.new(input: 1_000_000), table: rates).rates.should eq("arcana-ai 2026-10-13")
+      priced("anthropic", "claude-opus-5-5", Usage.new(input: 1_000_000), table: rates).rates.should eq("arcana-ai 2026-10-17")
     end
   end
 
@@ -232,8 +226,8 @@ describe Arcana::AI::Pricing do
   describe "the built-in table" do
     table = Pricing::Table.default
 
-    it "has an input rate for every model" do
-      table.models.each { |e| e.input.should_not be_nil, "#{e.provider} #{e.model}" }
+    it "has an input rate for every model, or a characters rate for speech billed by the character" do
+      table.models.each { |e| (e.input || e.characters).should_not be_nil, "#{e.provider} #{e.model}" }
     end
 
     it "never has two sets of rates for one model on one day" do

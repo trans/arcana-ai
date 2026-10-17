@@ -29,7 +29,7 @@ module Arcana::AI
   #   response.cost(table: rates)
   module Pricing
     # Rates for a model, in USD: tokens per million, web searches and
-    # credits per thousand. Nil means the model has no such rate.
+    # characters per thousand. Nil means the model has no such rate.
     class Rates
       include YAML::Serializable
       include JSON::Serializable
@@ -43,10 +43,10 @@ module Arcana::AI
       getter image_output : BigDecimal?
       getter audio_output : BigDecimal?
       getter web_search : BigDecimal?
-      getter credits : BigDecimal?
+      getter characters : BigDecimal?
 
       def initialize(@input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil,
-                     @image_input = nil, @image_output = nil, @audio_output = nil, @web_search = nil, @credits = nil)
+                     @image_input = nil, @image_output = nil, @audio_output = nil, @web_search = nil, @characters = nil)
       end
     end
 
@@ -73,7 +73,7 @@ module Arcana::AI
       def initialize(@provider : String, @model : String, @input = nil, @output = nil, @cache_read = nil, @cache_write = nil, @cache_write_1h = nil,
                      @image_input = nil, @image_output = nil, @audio_output = nil, @web_search = nil,
                      @aliases = [] of String, @long = nil, @geo = {} of String => BigDecimal, @since = nil, @before = nil,
-                     @credits = nil)
+                     @characters = nil)
       end
 
       def matches?(provider : String, model : String, at : Time) : Bool
@@ -104,7 +104,7 @@ module Arcana::AI
     class Table
       include YAML::Serializable
 
-      # Names the table and its edition, as "arcana-ai 2026-10-13";
+      # Names the table and its edition, as "arcana-ai 2026-10-17";
       # every `Cost` priced from it carries this.
       getter version : String
       getter providers : Hash(String, ProviderRates) = {} of String => ProviderRates
@@ -153,15 +153,15 @@ module Arcana::AI
       include JSON::Serializable
 
       # "input", "cache_read", "cache_write", "cache_write_1h", "image_input",
-      # "output", "image_output", "audio_output", "web_search" or "credits",
-      # or for a reported cost, what it was for.
+      # "output", "image_output", "audio_output", "web_search" or
+      # "characters", or for a reported cost, what it was for.
       getter item : String
       getter quantity : Int64
-      # "tokens", "searches" or "credits", or for a reported cost, what it
-      # was for ("images").
+      # "tokens", "searches" or "characters", or for a reported cost, what
+      # it was for ("images").
       getter unit : String
-      # USD per million tokens, or per thousand searches or credits; for a
-      # reported cost, its USD.
+      # USD per million tokens, or per thousand searches or characters; for
+      # a reported cost, its USD.
       getter rate : BigDecimal
       getter amount : BigDecimal
 
@@ -272,9 +272,9 @@ module Arcana::AI
         rate = table.web_search_rate(entry) || return Unpriced.new(provider, model, :no_rate, "#{model} has no web_search rate in #{table.version}")
         lines << Line.new("web_search", usage.web_searches, "searches", rate, rate * usage.web_searches / THOUSAND)
       end
-      if usage.credits > 0
-        rate = rates.credits || return Unpriced.new(provider, model, :no_rate, "#{model} has no credits rate in #{table.version}")
-        lines << Line.new("credits", usage.credits, "credits", rate, rate * usage.credits / THOUSAND)
+      if usage.characters > 0
+        rate = rates.characters || return Unpriced.new(provider, model, :no_rate, "#{model} has no characters rate in #{table.version}")
+        lines << Line.new("characters", usage.characters, "characters", rate, rate * usage.characters / THOUSAND)
       end
 
       excluded = [] of String

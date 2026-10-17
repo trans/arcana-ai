@@ -123,7 +123,7 @@ module Arcana::AI
         )
       end
 
-      # The credits charged, which ElevenLabs reports in a header.
+      # The characters billed, which ElevenLabs reports in a header.
       private def usage_from(headers : HTTP::Headers) : Usage?
         Usage.from_elevenlabs(headers["character-cost"]?)
       end

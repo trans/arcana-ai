@@ -84,7 +84,7 @@ case cost = response.cost
 in Arcana::AI::Pricing::Cost
   cost.total     # => 0.0111 (BigDecimal, USD)
   cost.lines     # input, cache_read, output..., each with its rate
-  cost.rates     # => "arcana-ai 2026-10-13", the rate table used
+  cost.rates     # => "arcana-ai 2026-10-17", the rate table used
 in Arcana::AI::Pricing::Unpriced
   cost.reason    # NoUsage, UnknownModel, Tier, Region or NoRate
   cost.detail
@@ -100,10 +100,11 @@ which arcana-ai now asks for its audio as events; tts-1 and tts-1-hd
 calls and OpenAI's older image models (whose cached tokens go unreported)
 come back `Unpriced`.
 
-ElevenLabs speech reports the credits it charged, as `usage.credits`.
-What a credit costs depends on your plan, so the built-in table has no
-ElevenLabs rates and those calls come back `Unpriced` until you give a
-`credits` rate (USD per thousand credits) in a table of your own, below.
+ElevenLabs speech reports the characters it billed, as
+`usage.characters`, priced at its API rates per thousand characters,
+which are the same on every plan. The count is ElevenLabs' own and can be
+less than the text's length: eleven_v3 bills fewer characters than it
+reads.
 
 A `Cost` isn't an estimate. The rates come from the providers' pricing
 pages (`src/arcana-ai/pricing/rates.yml`) and are looked up by the model
@@ -125,7 +126,6 @@ rates = Arcana::AI::Pricing::Table.default.merge(Arcana::AI::Pricing::Table.from
   version: my-app 2026-10-13
   models:
     - {provider: my-gateway, model: my-model, input: 0.50, output: 1.50}
-    - {provider: elevenlabs, model: eleven_v3, credits: 0.10}  # your plan's price per thousand credits
   YAML
 response.cost(table: rates)
 Arcana::AI::Pricing.cost(provider, model, usage, at: logged_at, table: rates) # price a stored call

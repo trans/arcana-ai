@@ -21,9 +21,9 @@ module Arcana::AI
   # - `image_output`: image tokens generated.
   # - `audio_output`: audio tokens generated (OpenAI's speech models).
   # - `web_searches`, `code_executions`: server-side tool calls.
-  # - `credits`: what the call was charged in the provider's own credits,
-  #   for providers that bill that way (ElevenLabs). A credit isn't a
-  #   character: ElevenLabs charges some models less than one a character.
+  # - `characters`: characters billed, for speech billed by the character
+  #   (ElevenLabs). The provider's count, which can be fewer than the text
+  #   has: ElevenLabs bills eleven_v3 for less than its length.
   # - `tier`: the service tier the call ran on, `"standard"` for the
   #   provider's standard tier, nil when not reported.
   # - `geo`: where the provider says it ran the call (Anthropic's
@@ -47,7 +47,7 @@ module Arcana::AI
     getter audio_output : Int64 = 0_i64
     getter web_searches : Int64 = 0_i64
     getter code_executions : Int64 = 0_i64
-    getter credits : Int64 = 0_i64
+    getter characters : Int64 = 0_i64
     getter tier : String?
     getter geo : String?
 
@@ -63,7 +63,7 @@ module Arcana::AI
       @audio_output : Int64 = 0_i64,
       @web_searches : Int64 = 0_i64,
       @code_executions : Int64 = 0_i64,
-      @credits : Int64 = 0_i64,
+      @characters : Int64 = 0_i64,
       @tier : String? = nil,
       @geo : String? = nil,
     )
@@ -90,7 +90,7 @@ module Arcana::AI
         audio_output: audio_output + other.audio_output,
         web_searches: web_searches + other.web_searches,
         code_executions: code_executions + other.code_executions,
-        credits: credits + other.credits,
+        characters: characters + other.characters,
         tier: tier == other.tier ? tier : nil,
         geo: geo == other.geo ? geo : nil,
       )
@@ -146,11 +146,11 @@ module Arcana::AI
     end
 
     # From the `character-cost` header of an ElevenLabs response: the
-    # credits the call was charged, a whole number despite the name. Nil
-    # when the header is missing or isn't a whole number.
+    # characters the call was billed. Nil when the header is missing or
+    # isn't a whole number.
     def self.from_elevenlabs(character_cost : String?) : Usage?
-      return unless credits = character_cost.try(&.strip.to_i64?)
-      new(credits: credits)
+      return unless characters = character_cost.try(&.strip.to_i64?)
+      new(characters: characters)
     end
 
     # From an Anthropic `usage` object, whose `input_tokens` leave out the
