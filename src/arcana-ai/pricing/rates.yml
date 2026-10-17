@@ -7,7 +7,8 @@
 #   gemini     https://ai.google.dev/gemini-api/docs/pricing (paid tier)
 #   voyage     https://docs.voyageai.com/docs/pricing
 #
-# Token rates are per million tokens; web_search is per thousand searches.
+# Token rates are per million tokens; web_search is per thousand searches,
+# and credits per thousand credits, for providers that bill in credits.
 # cache_write is the provider's standard cache-write rate (Anthropic's
 # 5-minute writes, OpenAI's writes); cache_write_1h is Anthropic's 1-hour
 # writes. image_input, image_output and audio_output are for models that
@@ -21,6 +22,13 @@
 #   since:   the first day (UTC) the rates apply
 #   before:  the day (UTC) they stop applying
 #   aliases: other IDs for the same model
+#
+# ElevenLabs isn't listed. It bills speech in credits, which its responses
+# report (`usage.credits`), and what a credit costs depends on the plan.
+# Its price page gives rates per character, but some models are charged
+# less than a credit a character (eleven_v3 0.4, 2026-10-17), so those
+# rates would overstate them. Give your plan's `credits` rate in a table
+# of your own.
 #
 # Under `providers`, `web_search` applies to all of a provider's models,
 # and `dated_snapshots` prices an ID ending in -YYYY-MM-DD as the model

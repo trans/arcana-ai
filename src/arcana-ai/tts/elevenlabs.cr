@@ -56,7 +56,8 @@ module Arcana::AI
           status_code: response.status_code,
           content_type: response.headers["Content-Type"]? || "",
           content_length: response.body.bytesize.to_i64,
-          audio: response.body.to_slice)
+          audio: response.body.to_slice,
+          usage: usage_from(response.headers))
       end
 
       def stream(request : Request, ctx : Context? = nil, &block : Bytes ->) : Result
@@ -84,6 +85,7 @@ module Arcana::AI
 
         total_bytes = 0_i64
         content_type = ""
+        usage : Usage? = nil
 
         begin
           client.post(uri.request_target, headers: headers, body: payload) do |response|
@@ -93,6 +95,7 @@ module Arcana::AI
             end
 
             content_type = response.headers["Content-Type"]? || ""
+            usage = usage_from(response.headers)
             buf = Bytes.new(8192)
 
             while (bytes_read = response.body_io.read(buf)) > 0
@@ -116,7 +119,13 @@ module Arcana::AI
           status_code: 200,
           content_type: content_type,
           content_length: total_bytes,
+          usage: usage,
         )
+      end
+
+      # The credits charged, which ElevenLabs reports in a header.
+      private def usage_from(headers : HTTP::Headers) : Usage?
+        Usage.from_elevenlabs(headers["character-cost"]?)
       end
 
       private def build_payload(request : Request, model : String) : String

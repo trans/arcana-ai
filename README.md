@@ -97,8 +97,13 @@ Images and speech work the same way: `result.cost(at)` on an
 reports one (Runware does, as `reported_cost`) and its usage at list
 rates otherwise. OpenAI's speech reports usage only for gpt-4o-mini-tts,
 which arcana-ai now asks for its audio as events; tts-1 and tts-1-hd
-calls, ElevenLabs calls, and OpenAI's older image models (whose cached
-tokens go unreported) come back `Unpriced`.
+calls and OpenAI's older image models (whose cached tokens go unreported)
+come back `Unpriced`.
+
+ElevenLabs speech reports the credits it charged, as `usage.credits`.
+What a credit costs depends on your plan, so the built-in table has no
+ElevenLabs rates and those calls come back `Unpriced` until you give a
+`credits` rate (USD per thousand credits) in a table of your own, below.
 
 A `Cost` isn't an estimate. The rates come from the providers' pricing
 pages (`src/arcana-ai/pricing/rates.yml`) and are looked up by the model
@@ -120,6 +125,7 @@ rates = Arcana::AI::Pricing::Table.default.merge(Arcana::AI::Pricing::Table.from
   version: my-app 2026-10-13
   models:
     - {provider: my-gateway, model: my-model, input: 0.50, output: 1.50}
+    - {provider: elevenlabs, model: eleven_v3, credits: 0.10}  # your plan's price per thousand credits
   YAML
 response.cost(table: rates)
 Arcana::AI::Pricing.cost(provider, model, usage, at: logged_at, table: rates) # price a stored call

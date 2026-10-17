@@ -14,8 +14,9 @@ TTS_EVENTS = [
 ].join("\r\n\r\n") + "\r\n\r\n"
 
 # Yields the endpoint and the requests seen so far, as {path, body}.
-# Answers with events when the request asks for them.
-private def with_tts_server(status = 200, &)
+# Answers with events when the request asks for them, and otherwise with
+# the audio and ElevenLabs' `character-cost` header, unless it's nil.
+private def with_tts_server(status = 200, character_cost : String? = "12", &)
   seen = [] of {String, String}
   server = HTTP::Server.new do |ctx|
     body = ctx.request.body.try(&.gets_to_end) || ""
@@ -26,6 +27,7 @@ private def with_tts_server(status = 200, &)
       ctx.response.print TTS_EVENTS
     else
       ctx.response.content_type = "audio/mpeg"
+      character_cost.try { |c| ctx.response.headers["character-cost"] = c }
       ctx.response.write(TTS_AUDIO)
     end
   end
@@ -126,6 +128,45 @@ describe Arcana::AI::TTS::Provider do
           .synthesize(Arcana::AI::TTS::Request.new(text: "hello"))
         JSON.parse(seen.last[1])["stream_format"]?.should be_nil
         result.audio.should eq(TTS_AUDIO)
+        result.usage.should be_nil
+        result.cost.as(Arcana::AI::Pricing::Unpriced).reason.should eq(Arcana::AI::Pricing::Unpriced::Reason::NoUsage)
+      end
+    end
+  end
+
+  describe "ElevenLabs" do
+    mine = Arcana::AI::Pricing::Table.default.merge(Arcana::AI::Pricing::Table.from_yaml(<<-YAML))
+      version: mj 2026-10-17
+      models:
+        - {provider: elevenlabs, model: eleven_v3, credits: 0.10}
+      YAML
+
+    it "reports the credits it was charged, priced only at a rate you give" do
+      with_tts_server do |endpoint|
+        result = Arcana::AI::TTS::ElevenLabs.new(api_key: "xi-test", endpoint: endpoint, model: "eleven_v3")
+          .synthesize(Arcana::AI::TTS::Request.new(text: "hello"))
+        result.usage.not_nil!.credits.should eq(12)
+        result.cost.as(Arcana::AI::Pricing::Unpriced).reason.should eq(Arcana::AI::Pricing::Unpriced::Reason::UnknownModel)
+        # 12 × $0.10 per thousand
+        result.cost(table: mine).as(Arcana::AI::Pricing::Cost).total.should eq(BigDecimal.new("0.0012"))
+      end
+    end
+
+    it "streams, with the credits from the header" do
+      with_tts_server do |endpoint, seen|
+        chunks = [] of Bytes
+        result = Arcana::AI::TTS::ElevenLabs.new(api_key: "xi-test", endpoint: endpoint)
+          .stream(Arcana::AI::TTS::Request.new(text: "hello")) { |c| chunks << c.dup }
+        seen.last[0].should contain("/stream?")
+        chunks.sum(&.size).should eq(TTS_AUDIO.size)
+        result.usage.not_nil!.credits.should eq(12)
+      end
+    end
+
+    it "has no usage when the header is missing" do
+      with_tts_server(character_cost: nil) do |endpoint|
+        result = Arcana::AI::TTS::ElevenLabs.new(api_key: "xi-test", endpoint: endpoint)
+          .synthesize(Arcana::AI::TTS::Request.new(text: "hello"))
         result.usage.should be_nil
         result.cost.as(Arcana::AI::Pricing::Unpriced).reason.should eq(Arcana::AI::Pricing::Unpriced::Reason::NoUsage)
       end

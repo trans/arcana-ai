@@ -21,6 +21,9 @@ module Arcana::AI
   # - `image_output`: image tokens generated.
   # - `audio_output`: audio tokens generated (OpenAI's speech models).
   # - `web_searches`, `code_executions`: server-side tool calls.
+  # - `credits`: what the call was charged in the provider's own credits,
+  #   for providers that bill that way (ElevenLabs). A credit isn't a
+  #   character: ElevenLabs charges some models less than one a character.
   # - `tier`: the service tier the call ran on, `"standard"` for the
   #   provider's standard tier, nil when not reported.
   # - `geo`: where the provider says it ran the call (Anthropic's
@@ -31,17 +34,20 @@ module Arcana::AI
   struct Usage
     include JSON::Serializable
 
-    getter input : Int64
-    getter cache_read : Int64
-    getter cache_write : Int64
-    getter cache_write_1h : Int64
-    getter output : Int64
+    # A count missing from stored JSON reads as zero, so usage stored by an
+    # older release, before a category was added, still loads.
+    getter input : Int64 = 0_i64
+    getter cache_read : Int64 = 0_i64
+    getter cache_write : Int64 = 0_i64
+    getter cache_write_1h : Int64 = 0_i64
+    getter output : Int64 = 0_i64
     getter reasoning : Int64?
-    getter image_input : Int64
-    getter image_output : Int64
-    getter audio_output : Int64
-    getter web_searches : Int64
-    getter code_executions : Int64
+    getter image_input : Int64 = 0_i64
+    getter image_output : Int64 = 0_i64
+    getter audio_output : Int64 = 0_i64
+    getter web_searches : Int64 = 0_i64
+    getter code_executions : Int64 = 0_i64
+    getter credits : Int64 = 0_i64
     getter tier : String?
     getter geo : String?
 
@@ -57,6 +63,7 @@ module Arcana::AI
       @audio_output : Int64 = 0_i64,
       @web_searches : Int64 = 0_i64,
       @code_executions : Int64 = 0_i64,
+      @credits : Int64 = 0_i64,
       @tier : String? = nil,
       @geo : String? = nil,
     )
@@ -83,6 +90,7 @@ module Arcana::AI
         audio_output: audio_output + other.audio_output,
         web_searches: web_searches + other.web_searches,
         code_executions: code_executions + other.code_executions,
+        credits: credits + other.credits,
         tier: tier == other.tier ? tier : nil,
         geo: geo == other.geo ? geo : nil,
       )
@@ -135,6 +143,14 @@ module Arcana::AI
     def self.from_openai_speech(usage : JSON::Any?) : Usage?
       return unless usage && usage.as_h?
       new(input: count(usage, "input_tokens"), audio_output: count(usage, "output_tokens"))
+    end
+
+    # From the `character-cost` header of an ElevenLabs response: the
+    # credits the call was charged, a whole number despite the name. Nil
+    # when the header is missing or isn't a whole number.
+    def self.from_elevenlabs(character_cost : String?) : Usage?
+      return unless credits = character_cost.try(&.strip.to_i64?)
+      new(credits: credits)
     end
 
     # From an Anthropic `usage` object, whose `input_tokens` leave out the

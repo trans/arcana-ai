@@ -151,6 +151,29 @@ describe Arcana::AI::Pricing do
     end
   end
 
+  describe "credits" do
+    mine = Pricing::Table.default.merge(Pricing::Table.from_yaml(<<-YAML))
+      version: mj 2026-10-17
+      models:
+        - {provider: elevenlabs, model: eleven_v3, credits: 0.10}
+        - {provider: elevenlabs, model: eleven_flash_v2_5, input: 1}
+      YAML
+
+    it "prices credits per thousand, at a rate from a table of your own" do
+      cost = priced("elevenlabs", "eleven_v3", Usage.new(credits: 12), table: mine)
+      cost.total.should eq(usd("0.0012"))
+      cost.lines.map { |l| {l.item, l.quantity, l.unit} }.should eq([{"credits", 12, "credits"}])
+    end
+
+    it "has no built-in ElevenLabs rates, since a credit's price depends on the plan" do
+      reason("elevenlabs", "eleven_v3", Usage.new(credits: 12)).should eq(Pricing::Unpriced::Reason::UnknownModel)
+    end
+
+    it "won't price credits for a model with no credits rate" do
+      reason("elevenlabs", "eleven_flash_v2_5", Usage.new(credits: 12), table: mine).should eq(Pricing::Unpriced::Reason::NoRate)
+    end
+  end
+
   it "keeps a reported cost as it was reported" do
     cost = Pricing::Cost.reported("runware", "runware:101@1", usd("0.0038"), "image")
     {cost.total, cost.priced_as, cost.rates, cost.complete?}.should eq({usd("0.0038"), "runware:101@1", "reported by runware", true})

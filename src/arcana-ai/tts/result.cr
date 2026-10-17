@@ -11,7 +11,8 @@ module Arcana::AI
       property audio : Bytes          # audio, set only by in-memory synthesize
 
       # What the call used, when the provider reports it (OpenAI's
-      # gpt-4o-mini-tts); nil when it didn't. `cost` prices it.
+      # gpt-4o-mini-tts in tokens, ElevenLabs in credits); nil when it
+      # didn't. `cost` prices it.
       property usage : Usage?
 
       def initialize(
